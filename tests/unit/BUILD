@@ -3,6 +3,15 @@ load("@intrinsic-core//bazel:python.bzl", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
+py_test(
+    name = "test_grasping_types",
+    srcs = ["test_grasping_types.py"],
+    deps = [
+        "//src/grasping:contact_pairs",
+        "//src/grasping:types",
+    ],
+)
+
 # buildifier: disable=LANG_proto_library-colocation
 py_proto_library(
     name = "hal_adio_part_config_py_pb2",
