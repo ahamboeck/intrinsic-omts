@@ -115,11 +115,18 @@ class ParallelJawLimits:
 
 @dataclass(frozen=True)
 class ContactPairOptions:
-  """Search budget and total extra opening clearance, not per-finger clearance."""
+  """Bounded search and geometric normal alignment, not a friction model.
+
+  max_samples bounds attempted surface samples independently of max_pairs.
+  max_normal_angle_rad is the maximum angle from either outward normal to its
+  outward closing-line direction. Clearance is total extra opening.
+  """
 
   seed: int
   max_pairs: int
   opening_clearance_m: float
+  max_samples: int = 2000
+  max_normal_angle_rad: float = math.radians(5)
 
   def __post_init__(self) -> None:
     _require_integer(self.seed, "seed")
@@ -127,6 +134,10 @@ class ContactPairOptions:
     _require_finite_number(self.opening_clearance_m, "opening_clearance_m")
     if self.opening_clearance_m < 0:
       raise ValueError("opening_clearance_m must be nonnegative.")
+    _require_integer(self.max_samples, "max_samples", minimum=1)
+    _require_finite_number(self.max_normal_angle_rad, "max_normal_angle_rad")
+    if not 0 <= self.max_normal_angle_rad < math.pi / 2:
+      raise ValueError("Require 0 <= max_normal_angle_rad < pi/2.")
 
 
 @dataclass(frozen=True)
