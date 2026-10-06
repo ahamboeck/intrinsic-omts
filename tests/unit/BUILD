@@ -12,6 +12,15 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_contact_pairs",
+    srcs = ["test_contact_pairs.py"],
+    deps = [
+        "//src/grasping:contact_pairs",
+        "//src/grasping:types",
+    ],
+)
+
 # buildifier: disable=LANG_proto_library-colocation
 py_proto_library(
     name = "hal_adio_part_config_py_pb2",

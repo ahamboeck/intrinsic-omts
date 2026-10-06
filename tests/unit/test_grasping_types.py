@@ -4,7 +4,7 @@ import dataclasses
 import math
 import unittest
 
-from src.grasping import contact_pairs, types
+from src.grasping import types
 
 VERTICES = ((0.0, 0.0, 0.0), (0.04, 0.0, 0.0), (0.0, 0.03, 0.0))
 TRIANGLES = ((0, 1, 2),)
@@ -199,15 +199,20 @@ class GraspingTypesTest(unittest.TestCase):
     with self.assertRaises(TypeError):
       mesh.triangles[0][0] = 1
 
-  def test_search_placeholder_does_not_claim_empty_search_results(self):
-    with self.assertRaisesRegex(
-      NotImplementedError, "Contact-pair search is not implemented yet\\."
-    ):
-      contact_pairs.propose_contact_pairs(
-        types.TriangleMesh(VERTICES, TRIANGLES),
-        types.ParallelJawLimits(0, 0.05),
-        options=types.ContactPairOptions(0, 20, 0.001),
-      )
+  def test_search_budget_and_alignment_options(self):
+    for budget in (0, -1, True, 1.5):
+      with self.subTest(budget=budget):
+        with self.assertRaises(ValueError):
+          types.ContactPairOptions(0, 20, 0, max_samples=budget)
+    for angle in (-0.1, math.pi / 2, math.inf, math.nan, True):
+      with self.subTest(angle=angle):
+        with self.assertRaises(ValueError):
+          types.ContactPairOptions(0, 20, 0, max_normal_angle_rad=angle)
+    options = types.ContactPairOptions(
+      0, 20, 0, max_samples=1, max_normal_angle_rad=0
+    )
+    self.assertEqual(options.max_samples, 1)
+    self.assertEqual(options.max_normal_angle_rad, 0)
 
 
 if __name__ == "__main__":
