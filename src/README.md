@@ -5,6 +5,11 @@ Connects to a deployed Intrinsic Core solution over gRPC, loads a
 typed cell YAML configuration, assembles a single Behavior Tree, and executes
 the machine tending cycle via `solution.executive.run(tree)`.
 
+**In-progress feature:** [mesh-grasping implementation layout](../docs/MESH_GRASPING_PLAN.md).
+The pure package provides contact search, world-top-down poses and conservative
+SDF-derived local gripper checks. This is not an enabled grasp backend or a
+hardware-calibrated grasping feature.
+
 ## Package Structure
 
 | Directory / File | Description |
