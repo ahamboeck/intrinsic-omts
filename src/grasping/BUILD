@@ -50,3 +50,15 @@ py_library(
         ":types",
     ],
 )
+
+py_library(
+    name = "local_checks",
+    srcs = ["local_checks.py"],
+    deps = [
+        ":contact_pairs",
+        ":geometry",
+        ":poses",
+        ":profile",
+        ":types",
+    ],
+)
