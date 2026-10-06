@@ -21,6 +21,17 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_grasp_poses",
+    srcs = ["test_grasp_poses.py"],
+    deps = [
+        "//src/grasping:geometry",
+        "//src/grasping:hande_profile",
+        "//src/grasping:poses",
+        "//src/grasping:types",
+    ],
+)
+
 # buildifier: disable=LANG_proto_library-colocation
 py_proto_library(
     name = "hal_adio_part_config_py_pb2",
