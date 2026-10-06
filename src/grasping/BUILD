@@ -15,3 +15,38 @@ py_library(
     srcs = ["contact_pairs.py"],
     deps = [":types"],
 )
+
+py_library(
+    name = "geometry",
+    srcs = ["geometry.py"],
+    deps = [":types"],
+)
+
+py_library(
+    name = "profile",
+    srcs = ["profile.py"],
+    deps = [
+        ":geometry",
+        ":types",
+    ],
+)
+
+py_library(
+    name = "hande_profile",
+    srcs = ["hande_profile.py"],
+    deps = [
+        ":geometry",
+        ":profile",
+        ":types",
+    ],
+)
+
+py_library(
+    name = "poses",
+    srcs = ["poses.py"],
+    deps = [
+        ":geometry",
+        ":profile",
+        ":types",
+    ],
+)
