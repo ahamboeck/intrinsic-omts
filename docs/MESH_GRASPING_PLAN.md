@@ -6,6 +6,12 @@ SDF-derived gripper/object sweep checks are available in `src/grasping`. See its
 [README](../src/grasping/README.md) for exact guarantees, model/calibration limits
 and an ordered runnable test checklist. No backend or frame publisher is registered.
 
+The agreed next application slice is documented in
+[OMTS mesh grasp integration: current cube pick and lift](OMTS_MESH_GRASP_INTEGRATION_PLAN.md)
+(2026-10-09): FoundationPose-fed, Gazebo-only, preserving current attachment
+semantics. That plan governs the next integration milestone; the geometric
+contracts and limitations below remain applicable.
+
 ## Goal and ownership
 
 Add mesh-aware parallel-jaw grasping to OMTS incrementally, while keeping the
