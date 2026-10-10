@@ -179,6 +179,25 @@ The pure package uses only the Python standard library: no Core, NumPy, ROS,
 MoveIt, simulator or asset-loading imports. Bazel targets follow OMTS's existing
 Core-provided build macros; that is not a runtime SDK dependency.
 
+## Offline integration groundwork (P1, partial)
+
+`mesh_inputs.py` normalizes explicit mesh units and mesh-to-object transforms,
+and triangulates actual centered cuboid primitives (not arbitrary mesh bounding
+boxes). `selection.py` ranks and deduplicates top-down proposals, applies local
+checks, and tries alternatives through a required downstream feasibility callback.
+It bounds triangle count and callback attempts and rejects results received after
+the monotonic deadline. Blocking callbacks must enforce their own RPC timeouts.
+Ranking is a geometric preference, not a grasp stability or probability estimate.
+
+No actual asset acquisition, pose-freshness gate or Core feasibility implementation
+is connected yet. Tests use fake feasibility responses; this is not a registered
+backend or runtime acceptance evidence. Verify with:
+
+```sh
+python3 -B -m unittest discover -s tests/unit -p test_mesh_selection.py -v
+bazel test --test_output=errors //tests/unit:test_mesh_selection
+```
+
 ## Verify step 1
 
 From the OMTS repository root, run the focused contract suite:

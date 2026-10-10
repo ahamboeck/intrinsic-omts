@@ -62,3 +62,25 @@ py_library(
         ":types",
     ],
 )
+
+py_library(
+    name = "mesh_inputs",
+    srcs = ["mesh_inputs.py"],
+    deps = [
+        ":geometry",
+        ":types",
+    ],
+)
+
+py_library(
+    name = "selection",
+    srcs = ["selection.py"],
+    deps = [
+        ":contact_pairs",
+        ":geometry",
+        ":local_checks",
+        ":poses",
+        ":profile",
+        ":types",
+    ],
+)

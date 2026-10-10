@@ -46,6 +46,18 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_mesh_selection",
+    srcs = ["test_mesh_selection.py"],
+    deps = [
+        "//src/grasping:geometry",
+        "//src/grasping:hande_profile",
+        "//src/grasping:mesh_inputs",
+        "//src/grasping:selection",
+        "//src/grasping:types",
+    ],
+)
+
 # buildifier: disable=LANG_proto_library-colocation
 py_proto_library(
     name = "hal_adio_part_config_py_pb2",
