@@ -200,8 +200,9 @@ closure, payload support or a success probability.
 
 ## Step 3 — Construct world-top-down full-pose proposals
 
-Implemented without touching application runtime. The first PR is explicitly
-**world-top-down only**; arbitrary side/angled approaches are deferred.
+Implemented without touching application runtime. Proposals are **near world
+top-down**, with at most 2 degrees of approach tilt by default; arbitrary side
+approaches are deferred. A zero tilt limit retains strict world-top-down.
 
 1. Define `RigidTransform` with numeric basis columns and `ParallelJawProfile`
    with modeled jaw limits, articulated collision envelopes and center-to-TCP
@@ -209,8 +210,10 @@ Implemented without touching application runtime. The first PR is explicitly
 2. Construct a right-handed grasp-center frame: `+X` closing,
    `+Z` pregrasp-to-grasp approach, `+Y = +Z × +X`.
 3. Derive object-local approach from world down using fresh numeric
-   `world_T_object`. Reject nonperpendicular closing lines rather than tilting the
-   approach. Return two 180-degree yaw alternatives per compatible pair.
+   `world_T_object`. Preserve the actual contact closing line and choose the
+   closest perpendicular approach to world down. Reject pairs exceeding the
+   explicit tilt limit; never snap contacts or the perceived object pose.
+   Return two 180-degree yaw alternatives per compatible pair.
 4. Apply the fixed center-to-TCP transform. Keep grasp-center and TCP conventions
    distinct; derive pregrasp from approach direction, not a world-Z offset.
 5. Return immutable `GraspPoseProposal` with contact provenance, center and TCP

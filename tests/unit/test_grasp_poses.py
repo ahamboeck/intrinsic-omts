@@ -82,6 +82,44 @@ class GraspPosesTest(unittest.TestCase):
     self.assertEqual(self.proposals(pair(second=(0, 0, 0.02))), [])
     self.assertEqual(self.proposals(pair(second=(0.02, 0, 0.001))), [])
 
+  def test_small_tilt_preserves_contact_line_and_bounds_approach(self):
+    angle = math.radians(1)
+    contacts = pair(second=(0.02 * math.cos(angle), 0, 0.02 * math.sin(angle)))
+    results = self.proposals(contacts)
+    self.assertEqual(len(results), 2)
+    direction = (math.cos(angle), 0, math.sin(angle))
+    for proposal, sign in zip(results, (1, -1), strict=True):
+      self.assert_vec(
+        proposal.object_T_center.rotation[0], tuple(sign * v for v in direction)
+      )
+      self.assert_vec(
+        proposal.object_T_center.rotation[2],
+        (math.sin(angle), 0, -math.cos(angle)),
+      )
+      delta = tuple(
+        b - a
+        for a, b in zip(
+          proposal.object_T_tcp.translation,
+          proposal.object_T_pregrasp_tcp.translation,
+          strict=True,
+        )
+      )
+      self.assert_vec(delta, (-0.1 * math.sin(angle), 0, 0.1 * math.cos(angle)))
+    self.assertEqual(self.proposals(contacts, max_approach_tilt_rad=0), [])
+
+  def test_tilt_limit_boundary_and_invalid_limits(self):
+    limit = math.radians(2)
+    for angle, expected in ((limit, 2), (limit + 1e-6, 0)):
+      contacts = pair(
+        second=(0.02 * math.cos(angle), 0, 0.02 * math.sin(angle))
+      )
+      self.assertEqual(
+        len(self.proposals(contacts, max_approach_tilt_rad=limit)), expected
+      )
+    for value in (-1, math.nan, math.inf, True, math.pi / 2):
+      with self.subTest(limit=value), self.assertRaises(ValueError):
+        self.proposals(max_approach_tilt_rad=value)
+
   def test_top_down_means_world_down_for_a_tilted_object(self):
     world_T_object = RigidTransform(
       ((0, 0, -1), (0, 1, 0), (1, 0, 0)), (0.3, -0.2, 0.1)

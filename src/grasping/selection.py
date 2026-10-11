@@ -12,7 +12,11 @@ from dataclasses import dataclass
 from src.grasping.contact_pairs import propose_contact_pairs
 from src.grasping.geometry import RigidTransform, dot, sub
 from src.grasping.local_checks import check_local_grasp
-from src.grasping.poses import GraspPoseProposal, propose_top_down_grasps
+from src.grasping.poses import (
+  DEFAULT_MAX_APPROACH_TILT_RAD,
+  GraspPoseProposal,
+  propose_top_down_grasps,
+)
 from src.grasping.profile import ParallelJawProfile
 from src.grasping.types import (
   ContactPairOptions,
@@ -31,6 +35,7 @@ class SelectionOptions:
   max_triangles: int = 10000
   position_tolerance_m: float = 0.001
   rotation_tolerance_rad: float = math.radians(1)
+  max_approach_tilt_rad: float = DEFAULT_MAX_APPROACH_TILT_RAD
 
   def __post_init__(self) -> None:
     if not isinstance(self.contact_options, ContactPairOptions):
@@ -49,6 +54,9 @@ class SelectionOptions:
         raise ValueError(f"{name} must be positive.")
     if self.rotation_tolerance_rad >= math.pi:
       raise ValueError("rotation_tolerance_rad must be less than pi.")
+    _require_finite_number(self.max_approach_tilt_rad, "max_approach_tilt_rad")
+    if not 0 <= self.max_approach_tilt_rad < math.pi / 2:
+      raise ValueError("max_approach_tilt_rad must be in [0, pi/2).")
 
 
 @dataclass(frozen=True)
@@ -155,6 +163,7 @@ def select_grasp(
     world_T_object=world_T_object,
     pregrasp_distance_m=options.pregrasp_distance_m,
     open_width_m=options.open_width_m,
+    max_approach_tilt_rad=options.max_approach_tilt_rad,
   )
   center = tuple(
     (min(v[i] for v in mesh.vertices) + max(v[i] for v in mesh.vertices)) / 2

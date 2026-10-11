@@ -91,6 +91,34 @@ def proposal(
 
 
 class LocalGraspChecksTest(unittest.TestCase):
+  def test_small_world_tilt_keeps_real_contacts_and_local_checks(self):
+    angle = math.radians(1)
+    c, s = math.cos(angle), math.sin(angle)
+    mesh, profile = box(), synthetic_profile()
+    pair = contacts(mesh, (0, 0.005, 0.005), (0.02, 0.005, 0.005))
+    poses = propose_top_down_grasps(
+      (pair,),
+      profile,
+      world_T_object=RigidTransform(((c, 0, -s), (0, 1, 0), (s, 0, c))),
+      pregrasp_distance_m=0.1,
+      open_width_m=0.06,
+    )
+    self.assertEqual(len(poses), 2)
+    self.assertTrue(
+      all(check_local_grasp(mesh, p, profile).accepted for p in poses)
+    )
+    # Merely projecting the jaw direction to horizontal would no longer close
+    # through the two declared contacts, and must remain a malformed proposal.
+    forged = replace(
+      poses[0],
+      object_T_center=RigidTransform(
+        ((c, 0, s), (0, -1, 0), (s, 0, -c)),
+        poses[0].object_T_center.translation,
+      ),
+    )
+    with self.assertRaisesRegex(ValueError, "closing line"):
+      check_local_grasp(mesh, forged, profile)
+
   def test_concave_search_to_top_down_local_checks_is_deterministic(self):
     mesh = extruded(
       ((0, 0), (0.06, 0), (0.06, 0.02), (0.02, 0.02), (0.02, 0.06), (0, 0.06)),
