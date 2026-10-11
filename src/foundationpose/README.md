@@ -16,6 +16,23 @@ To build the complete Intrinsic MLModel asset:
 bazel build //src/foundationpose:foundationpose_mlmodel
 ```
 
+## Candidate batching and scoring
+
+`BATCH_SIZE` bounds refinement and rendering batches, **not scoring**. All
+refined candidate inputs for one object are accumulated and scored together.
+The score network depends on the candidate set: logits from separate batches
+(especially a smaller final batch) cannot be compared to select a global winner.
+Joint scoring requires memory for the full, fixed rotation-grid candidate set.
+Malformed/nonfinite scores and an empty candidate set fail inference rather than
+returning an identity fallback. The regression runs without CUDA or real weights:
+
+```sh
+bazel test --test_output=errors //tests/unit:test_foundationpose_scoring
+```
+
+Source changes require rebuilding and redeploying the model asset; unit tests or
+recorded-input diagnostic execution do not update an already deployed server.
+
 ## Updating Python Dependencies
 
 Python 3.12 dependencies are declared in `//third_party/foundationpose:requirements.in` and locked with SHA-256 hashes in `//third_party/foundationpose:requirements.txt`. To update the lockfile (no `BUILD` edits required):

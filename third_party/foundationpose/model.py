@@ -420,6 +420,8 @@ class TritonPythonModel:
             single_mask_np, depth_np, K_np, num_views=num_cand
           )
           total_cands = len(candidate_poses_np)
+          if total_cands == 0:
+            raise ValueError("FoundationPose generated no candidate poses.")
           effective_batch_size = (
             total_cands
             if (batch_size <= 0 or batch_size >= total_cands)
@@ -432,8 +434,9 @@ class TritonPythonModel:
           )
           sys.stderr.flush()
 
-          best_score = -float("inf")
-          raw_best_pose = None
+          refined_chunks = []
+          score_input1 = []
+          score_input2 = []
 
           for chunk_start in range(0, total_cands, effective_batch_size):
             chunk_end = min(chunk_start + effective_batch_size, total_cands)
@@ -474,20 +477,30 @@ class TritonPythonModel:
               rgb_float,
             )
 
-            score_outs = self.score_session.run(
-              None, {"input1": in1, "input2": in2}
+            refined_chunks.append(chunk_poses_np)
+            score_input1.append(in1)
+            score_input2.append(in2)
+
+          # Scoring is candidate-set dependent: logits from separate batches
+          # (especially a short final batch) must never be compared. Keep
+          # refinement/rendering batched, but score one complete set per object,
+          # as in NVIDIA's reference pipeline. BATCH_SIZE bounds refinement,
+          # not the joint scoring pass.
+          score_outs = self.score_session.run(
+            None,
+            {
+              "input1": np.concatenate(score_input1, axis=0),
+              "input2": np.concatenate(score_input2, axis=0),
+            },
+          )
+          scores = score_outs[0].reshape(-1)
+          if len(scores) != total_cands or not np.all(np.isfinite(scores)):
+            raise ValueError(
+              "FoundationPose returned invalid candidate scores."
             )
-            scores = score_outs[0].reshape(-1)
-
-            chunk_best_local_idx = int(np.argmax(scores))
-            chunk_best_score = float(scores[chunk_best_local_idx])
-            if chunk_best_score > best_score:
-              best_score = chunk_best_score
-              raw_best_pose = chunk_poses_np[chunk_best_local_idx]
-
-          if raw_best_pose is None:
-            raw_best_pose = np.eye(4, dtype=np.float32)
-            best_score = 0.0
+          best_index = int(np.argmax(scores))
+          best_score = float(scores[best_index])
+          raw_best_pose = np.concatenate(refined_chunks, axis=0)[best_index]
 
           mesh_center = (
             (mesh_vertices.min(axis=0) + mesh_vertices.max(axis=0)) / 2.0
