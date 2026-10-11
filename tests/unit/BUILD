@@ -4,6 +4,15 @@ load("@intrinsic-core//bazel:python.bzl", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_test(
+    name = "test_mesh_demo",
+    srcs = ["test_mesh_demo.py"],
+    deps = [
+        "//src/grasping:mesh_inputs",
+        "//tools/grasping:mesh_demo_lib",
+    ],
+)
+
+py_test(
     name = "test_grasping_types",
     srcs = ["test_grasping_types.py"],
     deps = [

@@ -104,6 +104,33 @@ class SelectionTest(unittest.TestCase):
       grasp.translation[0], 1 + report.selected.object_T_tcp.translation[0]
     )
 
+  def test_tilt_limit_reaches_selector_without_bypassing_local_checks(self):
+    angle = math.radians(1)
+    c, s = math.cos(angle), math.sin(angle)
+    world = RigidTransform(((c, 0, -s), (0, 1, 0), (s, 0, c)))
+    mesh = cuboid_mesh((0.0508, 0.127, 0.0762))
+
+    def run(limit):
+      return select_grasp(
+        mesh,
+        self.profile,
+        world_T_object=world,
+        options=replace(self.options, max_approach_tilt_rad=limit),
+        check_feasibility=lambda *args: FeasibilityResult(True),
+        deadline=10,
+        clock=lambda: 1,
+      )
+
+    strict = run(0)
+    self.assertEqual(strict.pose_proposals, 0)
+    self.assertEqual(strict.feasibility_checks, 0)
+    tolerant = run(math.radians(2))
+    self.assertGreater(tolerant.pose_proposals, 0)
+    self.assertIsNotNone(tolerant.selected)
+    for limit in (-1, True, math.nan, math.pi / 2):
+      with self.subTest(limit=limit), self.assertRaises(ValueError):
+        replace(self.options, max_approach_tilt_rad=limit)
+
   def test_deterministic_ranking(self):
     def check(*args):
       return FeasibilityResult(True)
