@@ -340,3 +340,10 @@ py_test(
         "@com_google_absl_py//absl/testing:absltest",
     ],
 )
+
+py_test(
+    name = "test_foundationpose_scoring",
+    srcs = ["test_foundationpose_scoring.py"],
+    data = ["//third_party/foundationpose:model.py"],
+    deps = ["@ai_intrinsic_sdks_pip_deps//numpy"],
+)
