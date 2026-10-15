@@ -3,6 +3,24 @@ load("@intrinsic-core//bazel:python.bzl", "py_library")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
+    name = "mesh_grasp_planner",
+    srcs = ["mesh_grasp_planner.py"],
+    deps = [
+        ":grasping",
+        "//src/grasping:contact_pairs",
+        "//src/grasping:geometry",
+        "//src/grasping:hande_profile",
+        "//src/grasping:local_checks",
+        "//src/grasping:poses",
+        "//src/grasping:profile",
+        "//src/grasping:runtime_frames",
+        "//src/grasping:types",
+        "@intrinsic-core//intrinsic_sdk/intrinsic/solutions:behavior_tree",
+        "@intrinsic-core//intrinsic_sdk/intrinsic/solutions:proto_building",
+    ],
+)
+
+py_library(
     name = "grasping",
     srcs = ["grasping.py"],
     deps = [
@@ -15,6 +33,7 @@ py_library(
     srcs = ["grasp_planners.py"],
     deps = [
         ":grasping",
+        ":mesh_grasp_planner",
         "//src/core:config",
         "//src/core:types",
         "//third_party/intrinsic_moveit:moveit_grasp_planner",
@@ -30,6 +49,7 @@ py_library(
         "//src/core:types",
         "//src/utils:math_utils",
         "@intrinsic-core//intrinsic/manipulation/skills/force:move_to_contact_proto_py_pb2",
+        "@intrinsic-core//intrinsic/world/proto:object_world_updates_py_pb2",
         "@intrinsic-core//intrinsic_sdk/intrinsic/solutions:behavior_tree",
         "@intrinsic_apis//intrinsic/math/proto:point_py_pb2",
         "@intrinsic_apis//intrinsic/math/proto:pose_py_pb2",
@@ -72,7 +92,7 @@ py_library(
         "//src/core:config",
         "//src/utils:dynamic_frame_calculator",
         "//src/utils:script_utils",
-        "@intrinsic-core//intrinsic/assets:id_utils_py",
+        "@intrinsic-core//intrinsic_sdk/intrinsic/assets:id_utils_py",
         "@intrinsic-core//intrinsic_sdk/intrinsic/solutions:behavior_tree",
         "@intrinsic-core//intrinsic_sdk/intrinsic/solutions:deployments",
         "@intrinsic-core//intrinsic_sdk/intrinsic/solutions:proto_building",

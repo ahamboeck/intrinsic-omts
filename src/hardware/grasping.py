@@ -20,6 +20,8 @@ from intrinsic.solutions import behavior_tree as bt
 class GraspPlannerInterface(abc.ABC):
   """Update grasp and pre-grasp frames for an already-localized workpiece."""
 
+  uses_contact_touchdown: bool = True
+
   @abc.abstractmethod
   def build_plan_grasp_task(
     self,

@@ -3,6 +3,21 @@ load("@intrinsic-core//bazel:python.bzl", "py_library")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
+    name = "runtime_frames",
+    srcs = ["runtime_frames.py"],
+    deps = [
+        ":contact_pairs",
+        ":geometry",
+        ":hande_profile",
+        ":local_checks",
+        ":poses",
+        ":types",
+        "@ai_intrinsic_sdks_pip_deps//numpy",
+        "@intrinsic-core//intrinsic_sdk/intrinsic/math/python:data_types",
+    ],
+)
+
+py_library(
     name = "types",
     srcs = [
         "__init__.py",

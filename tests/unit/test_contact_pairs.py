@@ -73,6 +73,34 @@ def cross(a, b):
 
 
 class ContactPairsTest(unittest.TestCase):
+  def test_direction_filter_focuses_sampling_before_pair_cap(self):
+    limits = ParallelJawLimits(0.001, 0.06)
+    options = ContactPairOptions(
+      seed=42, max_pairs=20, max_samples=100, opening_clearance_m=0.001
+    )
+    pairs = propose_contact_pairs(
+      box(),
+      limits,
+      options=options,
+      closing_direction_filter=lambda direction: abs(direction[0]) > 0.99,
+    )
+    self.assertEqual(len(pairs), 20)
+    for pair in pairs:
+      self.assertAlmostEqual(pair.separation_m, 0.04)
+      self.assertAlmostEqual(pair.first.point[1], pair.second.point[1])
+      self.assertAlmostEqual(pair.first.point[2], pair.second.point[2])
+
+  def test_direction_filter_with_no_eligible_faces_returns_no_pairs(self):
+    pairs = propose_contact_pairs(
+      box(),
+      ParallelJawLimits(0.001, 0.06),
+      options=ContactPairOptions(
+        seed=42, max_pairs=20, opening_clearance_m=0.001
+      ),
+      closing_direction_filter=lambda direction: False,
+    )
+    self.assertEqual(pairs, [])
+
   def assert_surface_contact(self, mesh, contact):
     self.assertGreaterEqual(contact.triangle_index, 0)
     self.assertLess(contact.triangle_index, len(mesh.triangles))

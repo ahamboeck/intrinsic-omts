@@ -8,6 +8,7 @@ import bisect
 import math
 import random
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from src.grasping.types import (
@@ -197,18 +198,35 @@ def propose_contact_pairs(
   gripper: ParallelJawLimits,
   *,
   options: ContactPairOptions,
+  closing_direction_filter: Callable[[Vec3], bool] | None = None,
 ) -> list[ContactPair]:
   """Return bounded contact proposals using area-uniform inward normal rays.
 
   Invalid/unsupported topology raises ValueError. An empty list means a finite
   search found no acceptable pairs, not that no physical grasp exists. The first
   exit, never a farther surface beyond a void, supplies the second contact.
+  Optional closing_direction_filter receives a unit direction in mesh/object
+  coordinates. Sample area-uniformly only on eligible source faces, before the
+  pair cap is consumed. All original topology/contact/width checks still run.
+  No eligible faces returns an empty list; no unfiltered fallback is implied.
   """
   origin, scale, faces = _prepare(mesh)
-  cumulative, total = [], 0.0
-  for face in faces:
+  if closing_direction_filter is not None and not callable(
+    closing_direction_filter
+  ):
+    raise ValueError("closing_direction_filter must be callable or None.")
+  cumulative, eligible, total = [], [], 0.0
+  for index, face in enumerate(faces):
+    direction = tuple(-component for component in face.normal)
+    if closing_direction_filter is not None and not closing_direction_filter(
+      direction
+    ):
+      continue
+    eligible.append(index)
     total += face.double_area
     cumulative.append(total)
+  if not eligible:
+    return []
   rng = random.Random(options.seed)
   cosine = math.cos(options.max_normal_angle_rad)
   pairs, accepted = [], []
@@ -217,9 +235,11 @@ def propose_contact_pairs(
     return tuple(a + scale * b for a, b in zip(origin, point, strict=True))
 
   for _ in range(options.max_samples):
-    source = min(
-      bisect.bisect_right(cumulative, rng.random() * total), len(faces) - 1
-    )
+    source = eligible[
+      min(
+        bisect.bisect_right(cumulative, rng.random() * total), len(eligible) - 1
+      )
+    ]
     face = faces[source]
     root, fraction = math.sqrt(rng.random()), rng.random()
     u, v = root * (1 - fraction), root * fraction

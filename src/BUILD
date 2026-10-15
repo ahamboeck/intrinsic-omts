@@ -13,6 +13,7 @@ py_binary(
         "//src/hardware",
         "//src/hardware:grasp_planners",
         "//src/utils",
+        "//tools/pose_estimation:cycle_overlay",
         "@com_google_absl_py//absl:app",
         "@com_google_absl_py//absl/flags",
         "@com_google_absl_py//absl/logging",

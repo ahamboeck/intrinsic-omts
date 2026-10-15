@@ -179,6 +179,36 @@ class BehaviorsTest(absltest.TestCase):
     self.assertIsInstance(tree.root, bt.Sequence)
     self.assertEqual(len(tree.root.children), 5)
 
+  def test_mesh_pick_uses_linear_contacts_not_touchdown_or_preclose_retract(
+    self,
+  ):
+    planner = _FakeGraspPlanner()
+    planner.uses_contact_touchdown = False
+    tree = build_pick_from_infeed_subtree(
+      self.robot,
+      self.gripper,
+      self.vision,
+      self.infeed_strategy,
+      self.config,
+      grasp_planner=planner,
+    )
+    self.vision.build_perception_and_spawn_task.assert_called_once()
+    self.assertFalse(
+      self.vision.build_perception_and_spawn_task.call_args.kwargs[
+        "publish_grasp_frames"
+      ]
+    )
+    self.robot.build_move_to_contact_task.assert_not_called()
+    self.robot.build_move_relative_cartesian_task.assert_not_called()
+    names = [node.name for node in tree.children]
+    self.assertLess(
+      names.index(_FAKE_PLANNER_TASK_NAME), names.index("Open Gripper")
+    )
+    self.assertLess(
+      names.index("Approach Mesh Contact Pose"),
+      names.index("Close Gripper (Grasp Part)"),
+    )
+
   def test_build_master_behavior_tree_repeat_cycles(self):
     tree = self._build_master_tree(num_cycles=4)
     self.assertIsInstance(tree.root, bt.Loop)
@@ -969,10 +999,6 @@ _INTRINSIC_CORE_SKILL_SPECS: dict[
     "EstimatePoseMultiViewParams",
     "EstimatePoseMultiViewResult",
     {
-      "camera_1": ["CameraConfig"],
-      "camera_2": ["CameraConfig"],
-      "camera_3": ["CameraConfig"],
-      "camera_4": ["CameraConfig"],
       "perception": ["intrinsic_proto.perception.v1.PoseEstimationService"],
     },
   ),
@@ -1289,6 +1315,83 @@ class HermeticSolutionAndBehaviorTreeContractTest(absltest.TestCase):
     tree.validate_id_uniqueness()
     tree._validate_signatures()
     return tree, tree.proto
+
+  def test_cycle_overlay_signature_serializes_and_runs_with_real_skill_results(self):
+    import types
+    from google.protobuf import descriptor_pool
+    from intrinsic.perception.proto.v1 import capture_data_pb2
+    from intrinsic.perception.proto.v1 import pose_estimate_in_root_pb2
+    from tools.pose_estimation.cycle_overlay import CyclePoseOverlay
+
+    config = load_app_config("configs/lab_bb_01/app_config.yaml")
+    solution = FakeSolution(
+      self.skill_infos, world_objects=self.cell_world_objects["lab_bb_01"]
+    )
+    # The existing fake compiler supports scalar-only schemas. Supply the
+    # real imported descriptors for this typed diagnostic schema as well.
+    class TypedProtoBuilderStub(FakeProtoBuilderStub):
+      def Compile(self, request):
+        response = super().Compile(request)
+        files = {}
+
+        def collect(descriptor):
+          for dependency in descriptor.dependencies:
+            collect(dependency)
+          files[descriptor.name] = descriptor_pb2.FileDescriptorProto.FromString(
+            descriptor.serialized_pb
+          )
+
+        collect(capture_data_pb2.DESCRIPTOR)
+        collect(pose_estimate_in_root_pb2.DESCRIPTOR)
+        collect(descriptor_pool.Default().FindMessageTypeByName("intrinsic_proto.Pose").file)
+        generated = response.file_descriptor_set.file[0]
+        generated.dependency.extend(files)
+        response.file_descriptor_set.file.extend(files.values())
+        return response
+
+    solution.proto_builder = pb.ProtoBuilder(stub=TypedProtoBuilderStub())
+    overlay = CyclePoseOverlay(
+      solution, config.cycle.workpiece_id, config.vision.pose_estimator_id,
+      "unused.json", "/workspace",
+    )
+    vision = OrbbecVision(
+      solution=solution, config=config.vision,
+      observation_task_builder=overlay.build_task,
+    )
+    sequence = vision.build_perception_and_spawn_task(
+      approach_offset_z=0.08, parent_object="root",
+      pregrasp_frame_name="pre_grasp", grasp_frame_name="grasp",
+      tool_object_name="gripper", tool_frame_name="tool_frame", max_tries=1,
+    )
+    self.assertLen(overlay.results, 1)
+    code_nodes = [
+      n for n in _iter_tree_nodes(sequence.proto)
+      if n.HasField("task") and n.task.HasField("execute_code")
+      and n.name == "Record Captured Estimate & Simulator Pose"
+    ]
+    self.assertLen(code_nodes, 1)
+    code = code_nodes[0].task.execute_code
+    self.assertEqual(
+      {assignment.path for assignment in code.parameters.assign},
+      {"capture", "estimates"},
+    )
+    self.assertNotEmpty(code.return_value_message_full_name)
+    params = skill_utils.create_message_from_file_descriptor_set(
+      code.file_descriptor_set, code.parameter_message_full_name
+    )
+    code.parameters.proto.Unpack(params)
+    params.capture.world_t_camera.orientation.w = 1
+    params.estimates.add(id="detected").root_t_target.orientation.w = 1
+    result_type = overlay.results[0].value_type
+    namespace = {"node_pb2": types.SimpleNamespace(ReturnValue=result_type)}
+    exec("def run(context, params):\n" + code.python_code.function_body, namespace)
+    context = mock.MagicMock()
+    context.object_world.stub.GetTransform.side_effect = ValueError("no sim")
+    result = namespace["run"](context, params)
+    self.assertEqual(result.estimates[0].id, "detected")
+    self.assertTrue(result.capture.HasField("world_t_camera"))
+    self.assertFalse(result.HasField("actual"))
+    self.assertEqual(result.warning, "no sim")
 
   def test_tier1_omts_and_lab_bb_01_tree_proto_serialization_and_descriptors(
     self,

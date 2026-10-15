@@ -15,6 +15,7 @@
 """Cell configuration dataclasses and strict YAML loader for OMTS workcells."""
 
 import dataclasses
+import math
 import pathlib
 from typing import Any, TypeVar
 
@@ -229,7 +230,13 @@ class GraspConfig:
   ignored otherwise.
 
   Attributes:
-      planner: Grasp planner backend (`'cuboid_center'` or `'moveit'`).
+      planner: Grasp planner backend (`'cuboid_center'`, `'moveit'`, or `'mesh'`).
+      mesh_cad_json: Actual CAD export in object coordinates and metres, with
+        vertices/triangles arrays. No bounding-box fallback or pose recording.
+      mesh_simulation_only: Explicit opt-in after verifying deployment routing.
+        This acknowledgement does not automatically detect hardware services.
+      mesh_pregrasp_distance_m: Retraction along the selected approach axis.
+      mesh_max_approach_tilt_deg: Maximum top-down deviation (default 2 degrees).
       moveit_tool_frame_name: MoveIt robot model link used as the grasp TCP.
         This is an SRDF link name, not an Object World frame.
       moveit_group_name: MoveIt planning group for the arm.
@@ -254,8 +261,39 @@ class GraspConfig:
   moveit_retract_dist_m: float = 0.05
   moveit_timeout_ms: float = 15000.0
   moveit_settle_seconds: float = 0.3
+  mesh_cad_json: str = ""
+  mesh_simulation_only: bool = False
+  mesh_pregrasp_distance_m: float = 0.1
+  mesh_max_approach_tilt_deg: float = 2.0
 
   def __post_init__(self) -> None:
+    if self.planner == GraspPlannerType.MESH.value:
+      if self.mesh_simulation_only is not True:
+        raise ValueError(
+          "Experimental mesh backend requires mesh_simulation_only: true."
+        )
+      if (
+        not isinstance(self.mesh_cad_json, str)
+        or not self.mesh_cad_json.strip()
+      ):
+        raise ValueError(
+          "mesh planner requires mesh_cad_json in object coordinates/metres."
+        )
+      for name in ("mesh_pregrasp_distance_m", "mesh_max_approach_tilt_deg"):
+        value = getattr(self, name)
+        if (
+          isinstance(value, bool)
+          or not isinstance(value, (int, float))
+          or not math.isfinite(value)
+        ):
+          raise ValueError(f"{name} must be a finite number.")
+      if (
+        self.mesh_pregrasp_distance_m <= 0
+        or not 0 <= self.mesh_max_approach_tilt_deg < 90
+      ):
+        raise ValueError(
+          "mesh requires positive pregrasp distance and tilt in [0, 90)."
+        )
     valid = sorted(member.value for member in GraspPlannerType)
     if self.planner not in valid:
       raise ValueError(

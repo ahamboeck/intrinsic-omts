@@ -53,7 +53,8 @@ def build_pick_from_infeed_subtree(
   5. Move tool to dynamic `pre_grasp` frame (`ANY`).
   6. Approach `grasp` standoff (`LINEAR`), perform compliant touchdown along
      tool +Z (`config.pick_touchdown`), and execute relative linear retract
-     along tool -Z (`create_seated_approach_tasks`).
+     along tool -Z (`create_seated_approach_tasks`). Mesh instead approaches
+     the checked contact pose directly, without touchdown or pre-close retract.
   7. Close gripper to grasp part and attach workpiece entity to gripper in the
      belief world.
   8. Retract arm linearly back up to `pre_grasp` (`LINEAR`).
@@ -170,17 +171,29 @@ def build_pick_from_infeed_subtree(
     )
   )
 
-  tasks.extend(
-    create_seated_approach_tasks(
-      robot=robot,
-      frame_name=grasp_frame_name,
-      parent_object=parent_object,
-      touchdown=config.pick_touchdown,
-      config=config,
-      label="Infeed Pick",
-      excluded_collision_pairs=approach_collision_pairs,
+  if grasp_planner is not None and not grasp_planner.uses_contact_touchdown:
+    tasks.append(
+      create_move_to_frame_task(
+        robot=robot,
+        frame_name=grasp_frame_name,
+        parent_object=parent_object,
+        motion_type="LINEAR",
+        excluded_collision_pairs=approach_collision_pairs,
+        task_name="Approach Mesh Contact Pose",
+      )
     )
-  )
+  else:
+    tasks.extend(
+      create_seated_approach_tasks(
+        robot=robot,
+        frame_name=grasp_frame_name,
+        parent_object=parent_object,
+        touchdown=config.pick_touchdown,
+        config=config,
+        label="Infeed Pick",
+        excluded_collision_pairs=approach_collision_pairs,
+      )
+    )
 
   tasks.extend(
     [

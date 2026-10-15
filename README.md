@@ -212,6 +212,13 @@ bazel run //tools/pose_estimation:run_pose_estimation -- \
   --pose_estimator_id=ai.intrinsic.raw_stock_2x3x5_estimator
 ```
 
+On the configured native-viewer host, this also refreshes the **Actual SNAPSHOT
+(green)** and **Perceived SNAPSHOT (magenta)** displays in `pixi run omts-rviz`.
+The perceived CAD uses this run's returned poses and captured camera transform,
+not the stored belief pose. Simulator state is read only for the actual overlay.
+See [overlay setup and limitations](docs/RVIZ_POSE_OVERLAY.md); use
+`--nopublish_pose_overlay` to disable visualization.
+
 #### 4.4. Run the OMTS application
 
 Connect to the running deployment and execute the machine tending Behavior Tree:

@@ -4,6 +4,87 @@ load("@intrinsic-core//bazel:python.bzl", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_test(
+    name = "test_cycle_overlay",
+    srcs = ["test_cycle_overlay.py"],
+    deps = [
+        "//tools/pose_estimation:cycle_overlay",
+        "@com_google_protobuf//:protobuf_python",
+        "@intrinsic-core//intrinsic_sdk/intrinsic/solutions:proto_building",
+        "@intrinsic_apis//intrinsic/math/proto:pose_py_pb2",
+        "@intrinsic_apis//intrinsic/perception/proto/v1:capture_data_py_pb2",
+        "@intrinsic_apis//intrinsic/perception/proto/v1:pose_estimate_in_root_py_pb2",
+    ],
+)
+
+py_test(
+    name = "test_viewpoint_collection",
+    srcs = ["test_viewpoint_collection.py"],
+    deps = [
+        "//src/grasping:geometry",
+        "//tools/pose_estimation:run_viewpoint_benchmark_lib",
+        "//tools/pose_estimation:viewpoint_benchmark",
+        "@ai_intrinsic_sdks_pip_deps//numpy",
+        "@intrinsic-core//intrinsic_sdk/intrinsic/math/python:pose3",
+        "@intrinsic-core//intrinsic_sdk/intrinsic/math/python:proto_conversion",
+        "@intrinsic-core//intrinsic_sdk/intrinsic/math/python:rotation3",
+        "@intrinsic-core//intrinsic_sdk/intrinsic/solutions:execution",
+        "@intrinsic_apis//intrinsic/perception/proto/v1:capture_result_py_pb2",
+        "@intrinsic_apis//intrinsic/perception/proto/v1:pose_estimation_service_py_pb2",
+    ],
+)
+
+py_test(
+    name = "test_viewpoint_benchmark",
+    srcs = ["test_viewpoint_benchmark.py"],
+    deps = [
+        "//src/grasping:geometry",
+        "//tools/pose_estimation:run_viewpoint_benchmark_lib",
+        "//tools/pose_estimation:viewpoint_benchmark",
+    ],
+)
+
+py_test(
+    name = "test_viewpoint_images",
+    srcs = ["test_viewpoint_images.py"],
+    deps = [
+        "//src/grasping:geometry",
+        "//tools/pose_estimation:viewpoint_images",
+        "@ai_intrinsic_sdks_pip_deps//numpy",
+    ],
+)
+
+py_test(
+    name = "test_pose_snapshot",
+    srcs = ["test_pose_snapshot.py"],
+    deps = [
+        "//tools/grasping:pose_overlay_lib",
+        "//tools/pose_estimation:pose_snapshot",
+    ],
+)
+
+py_test(
+    name = "test_pose_overlay",
+    srcs = ["test_pose_overlay.py"],
+    deps = ["//tools/grasping:pose_overlay_lib"],
+)
+
+py_test(
+    name = "test_mesh_runtime",
+    srcs = ["test_mesh_runtime.py"],
+    deps = [
+        "//src/core:config",
+        "//src/grasping:geometry",
+        "//src/grasping:hande_profile",
+        "//src/grasping:mesh_inputs",
+        "//src/grasping:runtime_frames",
+        "//src/grasping:types",
+        "//src/hardware:mesh_grasp_planner",
+        "@ai_intrinsic_sdks_pip_deps//numpy",
+        "@intrinsic-core//intrinsic_sdk/intrinsic/math/python:data_types",
+    ],
+)
+
+py_test(
     name = "test_mesh_demo",
     srcs = ["test_mesh_demo.py"],
     deps = [
@@ -163,11 +244,12 @@ py_test(
         "//src/hardware:machine",
         "//src/hardware:robot",
         "//src/hardware:vision",
+        "//tools/pose_estimation:cycle_overlay",
         "@com_google_absl_py//absl/testing:absltest",
         "@com_google_protobuf//:protobuf_python",
-        "@intrinsic-core//intrinsic/assets/build_defs:asset_py_pb2",
         "@intrinsic-core//intrinsic/executive/proto:behavior_tree_py_pb2",
         "@intrinsic-core//intrinsic/world/proto:object_world_service_py_pb2",
+        "@intrinsic-core//intrinsic_sdk/intrinsic/assets/build_defs:asset_py_pb2",
         "@intrinsic-core//intrinsic_sdk/intrinsic/solutions:behavior_tree",
         "@intrinsic-core//intrinsic_sdk/intrinsic/solutions:deployments",
         "@intrinsic-core//intrinsic_sdk/intrinsic/solutions:proto_building",
@@ -176,6 +258,8 @@ py_test(
         "@intrinsic_apis//intrinsic/assets/proto:asset_type_py_pb2",
         "@intrinsic_apis//intrinsic/assets/proto:id_py_pb2",
         "@intrinsic_apis//intrinsic/executive/proto:proto_builder_py_pb2",
+        "@intrinsic_apis//intrinsic/perception/proto/v1:capture_data_py_pb2",
+        "@intrinsic_apis//intrinsic/perception/proto/v1:pose_estimate_in_root_py_pb2",
         "@intrinsic_apis//intrinsic/resources/proto:resource_handle_py_pb2",
         "@intrinsic_apis//intrinsic/skills/proto:equipment_py_pb2",
         "@intrinsic_apis//intrinsic/skills/proto:skill_manifest_py_pb2",
@@ -337,8 +421,8 @@ py_test(
         "@com_google_absl_py//absl/testing:absltest",
         "@com_google_googleapis//google/longrunning:operations_py_proto",
         "@com_google_googleapis//google/rpc:status_py_proto",
-        "@intrinsic-core//intrinsic/assets/proto:installed_assets_py_pb2",
         "@intrinsic-core//intrinsic_perception/intrinsic/perception/service/ioc_train_service/proto:ioc_pose_estimator_params_py_pb2",
+        "@intrinsic-core//intrinsic_sdk/intrinsic/assets/proto:installed_assets_py_pb2",
         "@intrinsic_apis//intrinsic/assets/proto:view_py_pb2",
         "@intrinsic_apis//intrinsic/perception/proto/v1:train_service_py_pb2",
         "@intrinsic_apis//intrinsic/scene/proto/v1:scene_object_py_pb2",

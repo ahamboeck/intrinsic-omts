@@ -51,9 +51,12 @@ class HardwareAdaptersTest(absltest.TestCase):
     mock_move_to_contact = mock.MagicMock()
     mock_move_to_contact.return_value = bt.PythonScript(function_body="pass")
     mock_solution.skills.ai.intrinsic.move_to_contact = mock_move_to_contact
-    mock_attach = mock.MagicMock()
-    mock_attach.return_value = bt.PythonScript(function_body="pass")
-    mock_solution.skills.ai.intrinsic.attach_object_to_robot = mock_attach
+    mock_solution.skills.ai.intrinsic.attach_object_to_robot.return_value = (
+      bt.PythonScript(function_body="pass")
+    )
+    mock_update_world = mock.MagicMock()
+    mock_update_world.return_value = bt.PythonScript(function_body="pass")
+    mock_solution.skills.ai.intrinsic.update_world = mock_update_world
     mock_detach = mock.MagicMock()
     mock_detach.return_value = bt.PythonScript(function_body="pass")
     mock_solution.skills.ai.intrinsic.detach_object = mock_detach
@@ -181,26 +184,52 @@ class HardwareAdaptersTest(absltest.TestCase):
     # Attach object to robot
     attach_task = robot.build_attach_object_task("raw_stock_2x3x5")
     self.assertIsInstance(attach_task, bt.Task)
-    mock_attach.assert_called_once()
-    attach_kwargs = mock_attach.call_args.kwargs
+    mock_update_world.assert_called_once()
+    updates = mock_update_world.call_args.kwargs["updates"].updates
+    self.assertLen(updates, 2)
+    reparent = updates[0].reparent_object
     self.assertEqual(
-      attach_kwargs["gripper_entity"].by_name.object_name, "gripper"
+      reparent.parent_object.reference.by_name.object_name, "ur_module"
     )
+    self.assertTrue(reparent.parent_object.entity_filter.include_final_entity)
+    self.assertEmpty(reparent.parent_object.entity_filter.entity_names)
     self.assertEqual(
-      attach_kwargs["object_entity"].by_name.object_name, "raw_stock_2x3x5"
+      reparent.object.by_name.object_name, "raw_stock_2x3x5"
     )
+    # Reparenting preserves the pose; only gripper collisions are excluded.
+    collision = updates[1].toggle_collisions
+    self.assertEqual(collision.toggle_mode, 2)  # TOGGLE_MODE_DISABLE
+    self.assertEqual(collision.object_a.reference.by_name.object_name, "gripper")
+    self.assertEqual(
+      collision.object_b.reference.by_name.object_name, "raw_stock_2x3x5"
+    )
+    self.assertTrue(collision.object_a.entity_filter.include_all_entities)
+    self.assertTrue(collision.object_b.entity_filter.include_all_entities)
+    mock_solution.skills.ai.intrinsic.attach_object_to_robot.assert_not_called()
+    mock_update_world.reset_mock()
 
     # Detach object from robot
     detach_task = robot.build_detach_object_task("raw_stock_2x3x5")
-    self.assertIsInstance(detach_task, bt.Task)
+    self.assertIsInstance(detach_task, bt.Sequence)
+    self.assertLen(detach_task.children, 2)
     mock_detach.assert_called_once()
     detach_kwargs = mock_detach.call_args.kwargs
     self.assertEqual(
-      detach_kwargs["gripper_entity"].by_name.object_name, "gripper"
+      detach_kwargs["gripper_entity"].by_name.object_name, "ur_module"
     )
     self.assertEqual(
       detach_kwargs["object_entity"].by_name.object_name, "raw_stock_2x3x5"
     )
+    self.assertTrue(detach_kwargs["skip_collision_enable"])
+    mock_update_world.assert_called_once()
+    collision = mock_update_world.call_args.kwargs["update"].toggle_collisions
+    self.assertEqual(collision.toggle_mode, 1)  # TOGGLE_MODE_ENABLE
+    self.assertEqual(collision.object_a.reference.by_name.object_name, "gripper")
+    self.assertEqual(
+      collision.object_b.reference.by_name.object_name, "raw_stock_2x3x5"
+    )
+    self.assertTrue(collision.object_a.entity_filter.include_all_entities)
+    self.assertTrue(collision.object_b.entity_filter.include_all_entities)
 
   def test_dio_gripper(self):
     mock_solution = mock.MagicMock()
@@ -497,8 +526,21 @@ class HardwareAdaptersTest(absltest.TestCase):
     )
     mock_estimate_action = mock.MagicMock(spec=bt.ActionBase)
     mock_estimate_action.proto = mock.MagicMock()
-    mock_solution.skills.ai.intrinsic.estimate_pose_multi_view.return_value = (
-      mock_estimate_action
+    def estimate_pose_multi_view(
+      *,
+      perception,
+      pose_estimator,
+      capture_data,
+      min_num_instances,
+      log_debug_data,
+    ):
+      # Match the newer Core manifest: camera input comes through capture_data.
+      self.assertIs(perception, mock_perception_resource)
+      self.assertEqual(capture_data, [mock_capture_action.result.capture_data])
+      return mock_estimate_action
+
+    mock_solution.skills.ai.intrinsic.estimate_pose_multi_view.side_effect = (
+      estimate_pose_multi_view
     )
     vision_config = VisionConfig(
       camera_name="orbbec_camera",
@@ -800,6 +842,28 @@ class HardwareAdaptersTest(absltest.TestCase):
     self.assertEqual(publish_field.number, 17)
     self.assertEqual(publish_field.type, "bool")
     self.assertTrue(publish_field.arg)
+
+    observation = bt.Sequence(name="Evaluation Snapshot", children=[])
+    observer = mock.Mock(return_value=observation)
+    observed_vision = OrbbecVision(
+      solution=mock_solution, config=vision_cfg,
+      observation_task_builder=observer,
+    )
+    kwargs = dict(
+      approach_offset_z=0.08, parent_object="root",
+      pregrasp_frame_name="pre_grasp", grasp_frame_name="grasp",
+      tool_object_name="gripper", tool_frame_name="tool_frame", max_tries=1,
+    )
+    observed_seq = observed_vision.build_perception_and_spawn_task(**kwargs)
+    observer.assert_called_once_with(mock_capture_action, mock_est_action)
+    self.assertLen(observed_seq.children, 4)
+    self.assertIs(observed_seq.children[2], observation)
+    self.assertIn("Estimate", observed_seq.children[1].name)
+    self.assertIn("Calculate", observed_seq.children[3].name)
+    observer.side_effect = RuntimeError("Optional observer unavailable")
+    self.assertLen(
+      observed_vision.build_perception_and_spawn_task(**kwargs).children, 3
+    )
 
     # Missing resources raise ValueError
     mock_solution.resources = {}

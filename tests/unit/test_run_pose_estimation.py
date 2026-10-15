@@ -14,6 +14,7 @@
 
 """Unit tests for tools/pose_estimation/run_pose_estimation.py."""
 
+from types import SimpleNamespace
 from typing import Any
 from unittest import mock
 
@@ -21,6 +22,7 @@ from absl.testing import absltest
 
 from tools.pose_estimation.run_pose_estimation import (
   create_pose_estimation_pipeline,
+  export_pose_overlay,
   get_camera_resource,
   get_perception_service_resource,
 )
@@ -64,6 +66,60 @@ class _StrictSdkResources:
 
 class RunPoseEstimationTest(absltest.TestCase):
   """Tests resource discovery and pipeline assembly in run_pose_estimation."""
+
+  def test_overlay_reads_this_capture_and_received_estimates_not_belief(self):
+    solution = mock.MagicMock()
+    capture_skill = mock.Mock()
+    capture = solution.executive.get_value.return_value
+    capture.capture_data.HasField.return_value = True
+    result = SimpleNamespace(
+      estimates=[
+        SimpleNamespace(
+          id="part", score=0.8, root_t_target=mock.sentinel.received_pose
+        )
+      ]
+    )
+
+    def sdk_pose(translation):
+      rotation = mock.Mock()
+      rotation.rotate_point.side_effect = lambda axis: axis
+      return SimpleNamespace(translation=translation, rotation=rotation)
+
+    module = "tools.pose_estimation.run_pose_estimation"
+    with (
+      mock.patch(
+        module + ".proto_conversion.pose_from_proto",
+        side_effect=[sdk_pose([1, 2, 3]), sdk_pose([0.1, 0.2, 0.3])],
+      ) as convert,
+      mock.patch(module + ".ObjectWorldClient") as simulator,
+    ):
+      simulator.return_value.get_transform.return_value = sdk_pose([9, 9, 9])
+      snapshot = export_pose_overlay(
+        solution, capture_skill, result, "camera", "part"
+      )
+    solution.executive.get_value.assert_called_once_with(capture_skill.result)
+    self.assertEqual(
+      convert.call_args_list,
+      [
+        mock.call(capture.capture_data.world_t_camera),
+        mock.call(mock.sentinel.received_pose),
+      ],
+    )
+    self.assertEqual(
+      snapshot["perceived_objects"][0]["pose"]["translation_m"], (1.1, 2.2, 3.3)
+    )
+    self.assertEqual(
+      snapshot["actual_after_evaluation_only"]["translation_m"], [9.0, 9.0, 9.0]
+    )
+    solution.world.get_transform.assert_not_called()
+
+  def test_overlay_rejects_missing_capture_transform(self):
+    solution = mock.MagicMock()
+    solution.executive.get_value.return_value.capture_data.HasField.return_value = False
+    with self.assertRaisesRegex(ValueError, "no world_t_camera"):
+      export_pose_overlay(
+        solution, mock.Mock(), SimpleNamespace(estimates=[]), "camera", "part"
+      )
 
   def test_get_camera_resource_auto_detects_on_strict_sdk_resources(
     self,
@@ -152,6 +208,13 @@ class RunPoseEstimationTest(absltest.TestCase):
       sensor_ids=[1, 4],
     )
     est_kwargs = mock_solution.skills.ai.intrinsic.estimate_pose_multi_view.call_args.kwargs
+    # New Core receives camera data via capture_data, not camera resource slots.
+    for index in range(1, 5):
+      self.assertNotIn(f"camera_{index}", est_kwargs)
+    self.assertIs(est_kwargs["perception"], pe_handle)
+    self.assertEqual(
+      est_kwargs["capture_data"], [capture_skill.result.capture_data]
+    )
     self.assertEqual(est_kwargs["pose_estimator"].package, "ai.intrinsic")
     self.assertEqual(
       est_kwargs["pose_estimator"].id, "raw_stock_2x3x5_estimator"

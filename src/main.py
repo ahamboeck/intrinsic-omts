@@ -15,6 +15,9 @@
 """Main application entrypoint for the Open Machine Tending Solution."""
 
 from collections.abc import Sequence
+from dataclasses import replace
+import os
+from pathlib import Path
 
 from absl import app, flags, logging
 from intrinsic.solutions import deployments
@@ -32,6 +35,7 @@ from src.hardware.machine import DioCncMachine
 from src.hardware.robot import Robot
 from src.hardware.vision import OrbbecVision
 from src.utils.execution_utils import to_executive_simulation_mode
+from tools.pose_estimation.cycle_overlay import CyclePoseOverlay
 
 _CONFIG = flags.DEFINE_string(
   "config",
@@ -62,6 +66,27 @@ _GRASP_PLANNER = flags.DEFINE_enum_class(
   "the 'grasp' section of the cell config.",
 )
 
+_MESH_CAD_JSON = flags.DEFINE_string(
+  "mesh_cad_json",
+  None,
+  "Actual installed object-coordinate CAD JSON for experimental mesh planning.",
+)
+_MESH_SIMULATION_ONLY = flags.DEFINE_bool(
+  "mesh_simulation_only",
+  False,
+  "Explicitly confirm the connected deployment is simulation-only for mesh planning.",
+)
+
+_PUBLISH_POSE_OVERLAY = flags.DEFINE_bool(
+  "publish_pose_overlay", True, "Publish evaluation pose snapshots during cycles."
+)
+_OVERLAY_CAD_JSON = flags.DEFINE_string(
+  "overlay_cad_json", None, "Exact installed object-coordinate CAD JSON."
+)
+_OVERLAY_ROS_MANIFEST = flags.DEFINE_string(
+  "overlay_ros_manifest", None, "Optional native ROS Pixi manifest path."
+)
+
 
 def run_machine_tending_pipeline(
   solution_address: str,
@@ -69,6 +94,9 @@ def run_machine_tending_pipeline(
   simulation_mode: SimulationMode | None = None,
   num_cycles_override: int | None = None,
   grasp_planner_override: GraspPlannerType | None = None,
+  publish_pose_overlay: bool = True,
+  overlay_cad_json: str | None = None,
+  overlay_ros_manifest: str | None = None,
 ) -> None:
   """Connects to the solution deployment and executes the machine tending BT.
 
@@ -112,9 +140,28 @@ def run_machine_tending_pipeline(
     if config.machine is not None
     else None
   )
+  overlay = None
+  if publish_pose_overlay:
+    cad_path = overlay_cad_json
+    if cad_path is None and config.vision.pose_estimator_id == (
+      "ai.intrinsic.raw_stock_2x3x5_estimator"
+    ):
+      cad_path = "/tmp/opencode/omts_estimator_cad.json"
+    if cad_path and Path(cad_path).is_file():
+      overlay = CyclePoseOverlay(
+        solution,
+        config.cycle.workpiece_id,
+        config.vision.pose_estimator_id,
+        cad_path,
+        os.environ.get("BUILD_WORKSPACE_DIRECTORY", str(Path.cwd())),
+        overlay_ros_manifest,
+      )
+    else:
+      logging.warning("Cycle pose overlay disabled: exact CAD JSON unavailable.")
   vision = OrbbecVision(
     solution=solution,
     config=config.vision,
+    observation_task_builder=overlay.build_task if overlay else None,
   )
 
   infeed_mode = InfeedMode(config.vision.infeed_mode)
@@ -138,6 +185,7 @@ def run_machine_tending_pipeline(
     solution=solution,
     config=config.grasp,
     tool_object_name=config.robot.tool_object_name,
+    tool_frame_name=config.robot.tool_frame_name,
   )
 
   tree = build_machine_tending_behavior_tree(
@@ -162,7 +210,10 @@ def run_machine_tending_pipeline(
     num_cycles,
     planner_type.value,
   )
-  solution.executive.run(tree, simulation_mode=exec_sim_mode)
+  if overlay:
+    overlay.run(tree, simulation_mode=exec_sim_mode)
+  else:
+    solution.executive.run(tree, simulation_mode=exec_sim_mode)
 
 
 def main(argv: Sequence[str]) -> None:
@@ -177,12 +228,25 @@ def main(argv: Sequence[str]) -> None:
   if len(argv) > 1:
     raise app.UsageError("Too many command-line arguments.")
   config = load_app_config(_CONFIG.value)
+  if _GRASP_PLANNER.value is GraspPlannerType.MESH:
+    config = replace(
+      config,
+      grasp=replace(
+        config.grasp,
+        planner="mesh",
+        mesh_cad_json=_MESH_CAD_JSON.value or config.grasp.mesh_cad_json,
+        mesh_simulation_only=_MESH_SIMULATION_ONLY.value,
+      ),
+    )
   run_machine_tending_pipeline(
     solution_address=_ADDRESS.value,
     config=config,
     simulation_mode=_SIMULATION_MODE.value,
     num_cycles_override=_NUM_CYCLES.value,
     grasp_planner_override=_GRASP_PLANNER.value,
+    publish_pose_overlay=_PUBLISH_POSE_OVERLAY.value,
+    overlay_cad_json=_OVERLAY_CAD_JSON.value,
+    overlay_ros_manifest=_OVERLAY_ROS_MANIFEST.value,
   )
 
 

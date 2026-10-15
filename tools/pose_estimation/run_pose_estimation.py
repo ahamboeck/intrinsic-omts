@@ -20,7 +20,10 @@ executes the pose estimation process on the solution executive, and retrieves an
 displays the estimated 6D object poses.
 """
 
+import os
 from collections.abc import Sequence
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import grpc
@@ -30,6 +33,10 @@ from intrinsic.math.python import proto_conversion
 from intrinsic.perception.proto.v1 import pose_estimator_id_pb2
 from intrinsic.perception.skills.multi_view import estimate_pose_multi_view_pb2
 from intrinsic.solutions import deployments, execution, provided
+from intrinsic.world.proto import object_world_service_pb2_grpc
+from intrinsic.world.python.object_world_client import ObjectWorldClient
+
+from tools.pose_estimation.pose_snapshot import make_snapshot, publish_snapshot
 
 # Global default configuration values
 _DEFAULT_POSE_ESTIMATOR_ID: str = "ai.intrinsic.review_validation"
@@ -93,6 +100,32 @@ _TIMEOUT_SEC = flags.DEFINE_integer(
   "timeout_sec",
   None,
   help="Optional inference timeout in seconds.",
+)
+_PUBLISH_POSE_OVERLAY = flags.DEFINE_bool(
+  "publish_pose_overlay",
+  True,
+  "Publish fresh actual/perceived CAD snapshots through the host ROS environment.",
+)
+_OVERLAY_CAD_JSON = flags.DEFINE_string(
+  "overlay_cad_json",
+  None,
+  "Object-coordinate CAD JSON in metres for the overlay.",
+)
+_OVERLAY_OBJECT_NAME = flags.DEFINE_string(
+  "overlay_object_name",
+  "raw_stock_2x3x5",
+  "Simulator object for read-only actual-pose comparison.",
+)
+_OVERLAY_ESTIMATE_FRAME = flags.DEFINE_enum(
+  "overlay_estimate_frame",
+  "camera",
+  ["camera", "root"],
+  "Frame of returned estimates. Deployed IOC service returns camera-relative poses.",
+)
+_OVERLAY_ROS_MANIFEST = flags.DEFINE_string(
+  "overlay_ros_manifest",
+  None,
+  "Override the native_viewers ROS Pixi manifest.",
 )
 
 FLAGS = flags.FLAGS
@@ -302,10 +335,6 @@ def create_pose_estimation_pipeline(
 
   # 2. Set up estimate_pose_multi_view skill connected to Intrinsic Core Pose Estimator Service
   estimate_pose_kwargs: dict[str, Any] = {
-    "camera_1": camera_resource,
-    "camera_2": camera_resource,
-    "camera_3": camera_resource,
-    "camera_4": camera_resource,
     "perception": perception_resource,
     "pose_estimator": pose_estimator_proto,
     "capture_data": [capture_images_skill.result.capture_data],
@@ -385,6 +414,56 @@ def display_results(
     )
 
 
+def _pose_record(pose):
+  """SDK rotations converted to basis columns, without axis or yaw heuristics."""
+  return dict(
+    translation_m=[float(x) for x in pose.translation],
+    rotation_basis_columns=[
+      [float(x) for x in pose.rotation.rotate_point(axis)]
+      for axis in ((1, 0, 0), (0, 1, 0), (0, 0, 1))
+    ],
+  )
+
+
+def export_pose_overlay(solution, capture_skill, result, frame, object_name):
+  """Use the same run's capture and received estimates; never update belief."""
+  capture = solution.executive.get_value(capture_skill.result)
+  if not capture.capture_data.HasField("world_t_camera"):
+    raise ValueError(
+      "Capture has no world_t_camera; cannot place overlay in root."
+    )
+  camera = _pose_record(
+    proto_conversion.pose_from_proto(capture.capture_data.world_t_camera)
+  )
+  estimates = [
+    dict(
+      id=estimate.id,
+      score=estimate.score,
+      pose=_pose_record(
+        proto_conversion.pose_from_proto(estimate.root_t_target)
+      ),
+    )
+    for estimate in result.estimates
+  ]
+  # Only a simulator-world read. It is never passed into the inference skills.
+  actual = None
+  try:
+    simulator = ObjectWorldClient(
+      "sim_world",
+      object_world_service_pb2_grpc.ObjectWorldServiceStub(
+        solution.grpc_channel
+      ),
+    )
+    actual = _pose_record(
+      simulator.get_transform(simulator.root, simulator.get_object(object_name))
+    )
+  except (grpc.RpcError, ValueError, KeyError) as error:
+    print(f"Actual simulator pose unavailable (no belief fallback): {error}")
+  return make_snapshot(
+    camera, estimates, actual, datetime.now(UTC).isoformat(), frame
+  )
+
+
 def main(argv: Sequence[str]) -> None:
   """Main CLI execution flow for setting up and running pose estimation.
 
@@ -456,6 +535,40 @@ def main(argv: Sequence[str]) -> None:
     return
 
   display_results(result)
+  if _PUBLISH_POSE_OVERLAY.value:
+    try:
+      cad_path = _OVERLAY_CAD_JSON.value
+      if cad_path is None:
+        if pose_estimator_id != "ai.intrinsic.raw_stock_2x3x5_estimator":
+          raise ValueError(
+            "Set --overlay_cad_json for this estimator's exact CAD."
+          )
+        cad_path = "/tmp/opencode/omts_estimator_cad.json"
+      snapshot = export_pose_overlay(
+        solution,
+        capture_skill,
+        result,
+        _OVERLAY_ESTIMATE_FRAME.value,
+        _OVERLAY_OBJECT_NAME.value,
+      )
+      snapshot["pose_estimator_id"] = pose_estimator_id
+      workspace = os.environ.get("BUILD_WORKSPACE_DIRECTORY", str(Path.cwd()))
+      path, _ = publish_snapshot(
+        snapshot, cad_path, workspace, _OVERLAY_ROS_MANIFEST.value
+      )
+      print(
+        f"Fresh pose overlay exported to {path}; ROS publisher log: "
+        "/tmp/opencode/omts_perception_overlay.log"
+      )
+    except (
+      OSError,
+      ValueError,
+      RuntimeError,
+      KeyError,
+      TypeError,
+      grpc.RpcError,
+    ) as error:
+      print(f"Pose overlay unavailable; perception results unchanged: {error}")
 
 
 if __name__ == "__main__":

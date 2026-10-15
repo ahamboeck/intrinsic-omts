@@ -15,6 +15,7 @@
 """Vision and 3D camera hardware interfaces and Orbbec SBL implementation."""
 
 import abc
+import logging
 from unittest import mock
 
 from intrinsic.assets import id_utils
@@ -96,6 +97,7 @@ class OrbbecVision(VisionInterface):
     solution: deployments.Solution,
     config: VisionConfig,
     log_debug_data: bool = True,
+    observation_task_builder=None,
   ) -> None:
     """Initializes the Orbbec 3D vision adapter.
 
@@ -103,6 +105,9 @@ class OrbbecVision(VisionInterface):
         solution: Connected SBL deployment instance.
         config: Scoped VisionConfig defining camera, estimator, and sensor IDs.
         log_debug_data: Whether to log debug point clouds and images in SBL.
+        observation_task_builder: Optional diagnostic task factory receiving
+          this run's capture and estimate actions. Its results are not used
+          by localization or grasp planning.
     """
     self._solution = solution
     self._camera_name = config.camera_name
@@ -113,6 +118,7 @@ class OrbbecVision(VisionInterface):
     self._min_num_instances = config.min_num_instances
     self._min_safe_z = config.min_safe_z
     self._log_debug_data = log_debug_data
+    self._observation_task_builder = observation_task_builder
 
     # Resolve resource handles strictly by configured name
     self._camera_resource = _get_camera_resource(solution, config.camera_name)
@@ -196,10 +202,6 @@ class OrbbecVision(VisionInterface):
     )
 
     estimate_action = skills.ai.intrinsic.estimate_pose_multi_view(
-      camera_1=self._camera_resource,
-      camera_2=self._camera_resource,
-      camera_3=self._camera_resource,
-      camera_4=self._camera_resource,
       perception=self._perception_resource,
       pose_estimator=pose_estimator_proto,
       capture_data=[capture_action.result.capture_data],
@@ -223,11 +225,20 @@ class OrbbecVision(VisionInterface):
       publish_grasp_frames=publish_grasp_frames,
     )
 
+    observation_tasks = []
+    if self._observation_task_builder is not None:
+      try:
+        observation_tasks.append(
+          self._observation_task_builder(capture_action, estimate_action)
+        )
+      except Exception as error:
+        logging.warning("Perception observation disabled: %s", error)
     acquisition_and_calc_seq = bt.Sequence(
       name="Perception Capture, Estimation & Frame Calculation",
       children=[
         capture_task,
         estimate_task,
+        *observation_tasks,
         calc_task,
       ],
     )

@@ -1,0 +1,57 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Global Options:
+    Background Color: 35; 35; 40
+    Fixed Frame: root
+    Frame Rate: 30
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 0.05
+      Plane Cell Count: 10
+      Reference Frame: <Fixed Frame>
+      Offset:
+        X: 0.27
+        Y: 0.275
+        Z: 0.65
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Actual SNAPSHOT (green)
+      Enabled: true
+      Topic:
+        Value: /omts/actual_pose_snapshot
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Perceived SNAPSHOT (magenta)
+      Enabled: true
+      Topic:
+        Value: /omts/perceived_pose_snapshot
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+      Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 0.55
+      Focal Point:
+        X: 0.27
+        Y: 0.275
+        Z: 0.69
+      Pitch: 0.5
+      Yaw: 0.8
+      Target Frame: <Fixed Frame>
+Window Geometry:
+  Width: 1280
+  Height: 900

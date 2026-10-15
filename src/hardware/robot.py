@@ -30,6 +30,7 @@ from intrinsic.world.proto import (
   collision_action_pb2,
   collision_settings_pb2,
   object_world_refs_pb2,
+  object_world_updates_pb2,
 )
 
 from src.core.config import RobotConfig
@@ -425,12 +426,11 @@ class Robot:
     object_name: str,
     name: str | None = None,
   ) -> bt.Node:
-    """Builds an SBL attach_object_to_robot task to attach an object to the gripper."""
+    """Attach to the arm flange, excluding only workpiece-gripper collisions."""
     task_name = name or f"Attach {object_name} to {self._tool_object_name}"
-    attach_skill = self._solution.skills.ai.intrinsic.attach_object_to_robot
-    gripper_ref = object_world_refs_pb2.ObjectReference(
+    arm_ref = object_world_refs_pb2.ObjectReference(
       by_name=object_world_refs_pb2.ObjectReferenceByName(
-        object_name=self._tool_object_name
+        object_name=self._arm_part_name
       )
     )
     object_ref = object_world_refs_pb2.ObjectReference(
@@ -438,23 +438,67 @@ class Robot:
         object_name=object_name
       )
     )
-    action = attach_skill(
-      gripper_entity=gripper_ref,
-      object_entity=object_ref,
+    # A pinch gripper has two final entities. The arm has one flange, and
+    # reparenting without a pose override retains the workpiece's world pose.
+    # The generic attach skill would also disable workpiece-arm collisions;
+    # explicit updates preserve the original gripper-only collision handling.
+    updates = object_world_updates_pb2.ObjectWorldUpdates(
+      updates=[
+        object_world_updates_pb2.ObjectWorldUpdate(
+          reparent_object=object_world_updates_pb2.ReparentObjectRequest(
+            object=object_ref,
+            parent_object=object_world_refs_pb2.ObjectReferenceWithEntityFilter(
+              reference=arm_ref,
+              entity_filter=object_world_refs_pb2.ObjectEntityFilter(
+                include_final_entity=True
+              ),
+            ),
+          ),
+        ),
+        self._gripper_collision_update(object_name, enable=False),
+      ]
     )
+    action = self._solution.skills.ai.intrinsic.update_world(updates=updates)
     return bt.Task(action=action, name=task_name)
+
+  def _gripper_collision_update(
+    self, object_name: str, enable: bool
+  ) -> object_world_updates_pb2.ObjectWorldUpdate:
+    """Toggle the whole gripper-workpiece pair without changing arm collisions."""
+    refs = [
+      object_world_refs_pb2.ObjectReferenceWithEntityFilter(
+        reference=object_world_refs_pb2.ObjectReference(
+          by_name=object_world_refs_pb2.ObjectReferenceByName(object_name=name)
+        ),
+        entity_filter=object_world_refs_pb2.ObjectEntityFilter(
+          include_all_entities=True
+        ),
+      )
+      for name in (self._tool_object_name, object_name)
+    ]
+    return object_world_updates_pb2.ObjectWorldUpdate(
+      toggle_collisions=object_world_updates_pb2.ToggleCollisionsRequest(
+        object_a=refs[0],
+        object_b=refs[1],
+        toggle_mode=(
+          object_world_updates_pb2.TOGGLE_MODE_ENABLE
+          if enable
+          else object_world_updates_pb2.TOGGLE_MODE_DISABLE
+        ),
+      )
+    )
 
   def build_detach_object_task(
     self,
     object_name: str,
     name: str | None = None,
   ) -> bt.Node:
-    """Builds an SBL detach_object task to detach an object from the gripper."""
+    """Detach from the arm and restore workpiece-gripper collision checking."""
     task_name = name or f"Detach {object_name} from {self._tool_object_name}"
     detach_skill = self._solution.skills.ai.intrinsic.detach_object
-    gripper_ref = object_world_refs_pb2.ObjectReference(
+    arm_ref = object_world_refs_pb2.ObjectReference(
       by_name=object_world_refs_pb2.ObjectReferenceByName(
-        object_name=self._tool_object_name
+        object_name=self._arm_part_name
       )
     )
     object_ref = object_world_refs_pb2.ObjectReference(
@@ -463,7 +507,19 @@ class Robot:
       )
     )
     action = detach_skill(
-      gripper_entity=gripper_ref,
+      gripper_entity=arm_ref,
       object_entity=object_ref,
+      skip_collision_enable=True,
     )
-    return bt.Task(action=action, name=task_name)
+    return bt.Sequence(
+      name=task_name,
+      children=[
+        bt.Task(action=action, name=f"Detach {object_name} from Arm"),
+        bt.Task(
+          action=self._solution.skills.ai.intrinsic.update_world(
+            update=self._gripper_collision_update(object_name, enable=True)
+          ),
+          name=f"Restore {object_name}-Gripper Collisions",
+        ),
+      ],
+    )
