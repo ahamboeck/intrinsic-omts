@@ -347,3 +347,10 @@ py_test(
     data = ["//third_party/foundationpose:model.py"],
     deps = ["@ai_intrinsic_sdks_pip_deps//numpy"],
 )
+
+py_test(
+    name = "test_foundationpose_depth",
+    srcs = ["test_foundationpose_depth.py"],
+    data = ["//third_party/foundationpose:model.py"],
+    deps = ["@ai_intrinsic_sdks_pip_deps//numpy"],
+)

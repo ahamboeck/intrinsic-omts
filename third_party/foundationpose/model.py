@@ -320,6 +320,11 @@ class TritonPythonModel:
           rgb_np = rgb_np[0]
         if depth_np.ndim == 3:
           depth_np = depth_np[0]
+        # Sensors report missing depth as 0, NaN or +/-inf. Map all of them to
+        # 0 so they are masked out instead of poisoning the point map.
+        depth_np = np.where(
+          np.isfinite(depth_np) & (depth_np > 0), depth_np, 0
+        ).astype(np.float32)
         if K_np.ndim == 3:
           K_np = K_np[0]
         if mask_np.ndim == 2:
