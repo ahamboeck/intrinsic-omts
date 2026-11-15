@@ -21,8 +21,9 @@ from src.behaviors.motions import (
   create_move_to_frame_task,
   create_seated_approach_tasks,
 )
+from src.behaviors.regrasp import unload_frames
 from src.core.config import AppConfig
-from src.hardware.grasping import GraspPlannerInterface, plans_exact_contacts
+from src.grasping.interface import Approach, GraspPlannerInterface
 from src.hardware.gripper import GripperInterface
 from src.hardware.machine import CncMachineInterface
 from src.hardware.robot import Robot
@@ -45,10 +46,12 @@ def build_unload_machine_subtree(
      exclusions.
   3. Approach `place_vise_frame` standoff (`LINEAR`), compliantly touch down to
      machined part along tool +Z (`config.unload_touchdown`), and execute
-     relative linear retract (`create_seated_approach_tasks`). Planners without
-     `uses_contact_touchdown` instead open the gripper, plan a grasp on the
-     placed part into separate unload frames, and move to it through the
-     unload pregrasp, lifting back to that pregrasp before the retract.
+     relative linear retract (`create_seated_approach_tasks`). Planners with
+     `GraspExecution.replan_at_unload` instead plan a grasp on the placed part
+     into separate unload frames (see `regrasp.unload_frames`), opening the
+     gripper as at the pick, and approach it through the unload pregrasp as
+     their `GraspExecution.approach` says. A direct approach lifts back to the
+     unload pregrasp before the retract.
   4. Close gripper to grasp machined part and attach workpiece entity to
      gripper in the belief world.
   5. If `machine` is provided, open CNC vise to unclamp the grasped part.
@@ -61,8 +64,9 @@ def build_unload_machine_subtree(
       machine: Optional CNC machine controller adapter (`None` when cell has no
         CNC enclosure/vise).
       config: Validated application configuration dataclass.
-      grasp_planner: Optional grasp planner. Only planners without
-        `uses_contact_touchdown` are used here; the others keep the touchdown.
+      grasp_planner: Optional grasp planner. It is only used here if its
+        `GraspExecution.replan_at_unload` is set; otherwise the unload touches
+        down at the vise frame.
 
   Returns:
       Behavior tree sequence node executing machine unloading.
@@ -71,8 +75,6 @@ def build_unload_machine_subtree(
   machine_approach_frame_name = config.frames.machine_approach_frame
   preplace_vise_frame_name = config.frames.preplace_vise_frame
   place_vise_frame_name = config.frames.place_vise_frame
-  pregrasp_frame_name = config.frames.pregrasp_frame
-  grasp_frame_name = config.frames.grasp_frame
   workpiece_object_name = config.cycle.workpiece_id
   vise_object_name = (
     config.machine.vise_object_name if config.machine is not None else None
@@ -100,22 +102,31 @@ def build_unload_machine_subtree(
   if machine is not None:
     tasks.append(machine.build_open_door_task(name="Open CNC Door"))
 
-  use_direct_grasp_approach = plans_exact_contacts(grasp_planner)
-  if use_direct_grasp_approach:
-    # Preserve the infeed targets used by the return subtree.
-    grasp_frame_name = f"{grasp_frame_name}_unload"
-    pregrasp_frame_name = f"{pregrasp_frame_name}_unload"
-    # As in the infeed pick: plan with open jaws, then move to the contacts.
+  replan = (
+    grasp_planner is not None and grasp_planner.execution.replan_at_unload
+  )
+  direct = replan and grasp_planner.execution.approach is Approach.DIRECT
+  # Plan into separate frames so the infeed frames stay for the return.
+  grasp_frame_name, pregrasp_frame_name = unload_frames(config.frames)
+  if replan:
+    execution = grasp_planner.execution
+    open_task = gripper.build_open_task(name="Open Gripper for Unload")
+    if execution.open_before_planning:
+      tasks.append(open_task)
+    tasks.append(
+      grasp_planner.build_plan_grasp_task(
+        workpiece_object_name=workpiece_object_name,
+        parent_object=parent_object,
+        grasp_frame_name=grasp_frame_name,
+        pregrasp_frame_name=pregrasp_frame_name,
+        name="Plan Unload Grasp",
+      )
+    )
+    if not execution.open_before_planning:
+      tasks.append(open_task)
+  if direct:
     tasks.extend(
       [
-        gripper.build_open_task(name="Open Gripper for Unload"),
-        grasp_planner.build_plan_grasp_task(
-          workpiece_object_name=workpiece_object_name,
-          parent_object=parent_object,
-          grasp_frame_name=grasp_frame_name,
-          pregrasp_frame_name=pregrasp_frame_name,
-          name="Plan Unload Grasp",
-        ),
         create_move_through_frames_task(
           robot=robot,
           frame_names=[preplace_vise_frame_name, pregrasp_frame_name],
@@ -134,9 +145,23 @@ def build_unload_machine_subtree(
           parent_object=parent_object,
           motion_type="LINEAR",
           excluded_collision_pairs=vise_collision_pairs,
-          task_name="Approach Unload Contact Pose",
+          task_name="Approach Unload Grasp",
         ),
       ]
+    )
+  elif replan:
+    tasks.extend(
+      create_seated_approach_tasks(
+        robot=robot,
+        frame_name=grasp_frame_name,
+        parent_object=parent_object,
+        touchdown=config.unload_touchdown,
+        config=config,
+        label="Unload Grasp",
+        approach_frames=[preplace_vise_frame_name, pregrasp_frame_name],
+        approach_motion_types=["LINEAR", "ANY"],
+        excluded_collision_pairs=vise_collision_pairs,
+      )
     )
   else:
     tasks.extend(
@@ -170,7 +195,7 @@ def build_unload_machine_subtree(
     machine_approach_frame_name,
   ]
   exit_motion_types = ["LINEAR", "ANY"]
-  if use_direct_grasp_approach:
+  if direct:
     # Lift straight up off the planned contacts first.
     exit_frames.insert(0, pregrasp_frame_name)
     exit_motion_types.insert(0, "LINEAR")

@@ -117,37 +117,34 @@ During vision-guided infeed (`OrbbecVision.build_perception_and_spawn_task`):
    selection, and C++/CUDA FoundationPose inference via
    `nvidia_pose_estimator_service`, returning the 6D part pose in the camera
    optical frame (`T_camera_target`).
-3. **Dynamic Frame Calculator (`bt.PythonScript`)**:
-   Injected from [`src/utils/dynamic_frame_calculator.py`](../src/utils/dynamic_frame_calculator.py)
-   via [`load_python_script()`](../src/utils/script_utils.py):
+3. **Workpiece Pose Update (`bt.PythonScript`)**:
+   Injected from [`src/utils/workpiece_pose.py`](../src/utils/workpiece_pose.py)
+   via [`create_python_script()`](../src/utils/script_utils.py):
    * Queries live camera extrinsics in `root` and computes the world target pose
      (`T_root_target = T_root_camera @ T_camera_target`).
    * Enforces the minimum height safety bound (`z_target >= min_safe_z`).
-   * Then, **only when `publish_grasp_frames` is set** (the `cuboid_center`
-     backend):
-     * Projects the workpiece horizontal axes onto the world XY plane to find
-       the longest axis angle (`theta_longest`) and aligns the gripper yaw
-       (`psi = theta_longest`) across the short side.
-     * Evaluates all 4 symmetrically equivalent parallel-jaw grasp quaternions
-       (`+q1`, `-q1`, `+q2`, `-q2`) and selects the candidate maximizing
-       `|dot(q_i, q_tool)|` to minimize wrist joint rotation in SO(3).
-     * Updates `root/pre_grasp` (offset vertically by `+approach_z_offset`) and
-       `root/grasp` in the SBL `ObjectWorld`.
+   * Writes the pose to the workpiece object in the SBL `ObjectWorld`.
 
-### Grasp backends
+### Grasp planners
 
-Steps 1-2 and the pose update in step 3 localize the *workpiece* and always run.
-Producing the *grasp* on that workpiece is the selectable part:
+Perception only localizes the *workpiece*. The grasp planner selected by
+`grasp.planner` then writes `root/grasp` and `root/pre_grasp` from that pose,
+in a task the pick runs right after perception. Planners are registered in
+[`src/grasping/registry.py`](../src/grasping/registry.py) against the contract
+in [`src/grasping/interface.py`](../src/grasping/interface.py):
 
-| Backend | Who writes `root/grasp` / `root/pre_grasp` |
+| Planner | How it writes `root/grasp` / `root/pre_grasp` |
 | :--- | :--- |
-| `cuboid_center` (default) | The dynamic frame calculator, as described above. Purely geometric: no reachability or collision reasoning. |
-| `moveit` | A [`GraspPlannerInterface`](../src/hardware/grasping.py) node, built by [`create_grasp_planner`](../src/hardware/grasp_planners.py), appended after perception. `publish_grasp_frames` is `False`, so the calculator stops at the pose update and the [MoveIt integration](../third_party/intrinsic_moveit/README.md) samples reachable, collision-free candidates instead. |
+| `cuboid_center` (default) | A `bt.PythonScript` ([`algorithm.py`](../src/grasping/planners/cuboid_center/algorithm.py)) that projects the workpiece's horizontal axes onto the world XY plane, aligns the gripper yaw across the short side, picks the one of 4 symmetric top-down quaternions closest to the current tool orientation, and offsets `pre_grasp` by `approach_offset_z`. Purely geometric: no reachability or collision reasoning. |
+| `moveit` | The [MoveIt integration](../third_party/intrinsic_moveit/README.md) samples reachable, collision-free candidates. |
+| `antipodal_mesh` | The `antipodal_mesh_plan_grasp` skill plans on two opposing contacts of the part's mesh and checks them with Core's motion planner. Simulation only. |
 
-Exactly one of the two writes those frames on any given run, so a planner
-failure can never leave a stale heuristic grasp in the world. Everything
-downstream of the pick reads only `root/grasp` and `root/pre_grasp` and is
-therefore identical either way.
+Each planner also declares a `GraspExecution`: whether the gripper opens before
+planning, whether the tool touches down or moves directly onto the grasp, and
+whether the unload re-plans the grasp, in which case the return corrects for
+the new grip. The subtrees keep the sequence and read these values, so
+everything else is identical across planners. See
+[`src/grasping/README.md`](../src/grasping/README.md).
 
 ---
 
@@ -166,7 +163,8 @@ sequenceDiagram
     CNC->>World: Open CNC Door (DIO + 10s dwell + update_world) & Vise (DIO + update_world)
     Robot->>Robot: Move to view frame (ANY)
     Vision->>Vision: Capture RGB-D & Estimate 6D Pose (FoundationPose)
-    Vision->>World: Update dynamic root/pre_grasp & root/grasp (PythonScript)
+    Vision->>World: Update workpiece pose (PythonScript)
+    Robot->>World: Grasp planner writes root/pre_grasp & root/grasp
     Gripper->>Gripper: Open Gripper
     Robot->>Robot: Move to root/pre_grasp (ANY)
     Robot->>Robot: Linear Approach to Standoff & Compliant Touchdown (+Z tool, Retry + Fallback)

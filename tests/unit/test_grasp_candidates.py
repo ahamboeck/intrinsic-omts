@@ -12,14 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for top-down mesh grasp candidates."""
+"""Tests for top-down mesh grasp candidates and mesh validation."""
 
 import math
 
 import numpy as np
 from absl.testing import absltest
 
-from src.grasping import candidates
+from src.grasping import gripper_model_pb2, workpiece_mesh
+from src.grasping.planners.antipodal_mesh import candidates
+
+# The Hand-E as configured for the OMTS cells.
+_HANDE = gripper_model_pb2.ParallelJawGripper(
+  min_width_m=0.01, max_width_m=0.06, contact_depth_m=0.022
+)
 
 # Outward-facing triangles of the unit cube [0, 1]^3.
 _CUBE_TRIANGLES = (
@@ -55,7 +61,13 @@ def _boxes(*boxes):
     ):
       vertices.append([low[i] + (x, y, z)[i] * size[i] for i in range(3)])
     triangles.extend([base + i for i in tri] for tri in _CUBE_TRIANGLES)
-  return candidates.validate_mesh(vertices, triangles)
+  return workpiece_mesh.validate_mesh(vertices, triangles)
+
+
+def _top_down_grasps(vertices, triangles, world_t_object, **kwargs):
+  return candidates.top_down_grasps(
+    vertices, triangles, world_t_object, _HANDE, **kwargs
+  )
 
 
 def _centered_box(size):
@@ -64,7 +76,7 @@ def _centered_box(size):
 
 class TopDownGraspsTest(absltest.TestCase):
   def test_box_is_grasped_across_its_narrow_side(self):
-    found = candidates.top_down_grasps(
+    found = _top_down_grasps(
       *_centered_box((0.04, 0.1, 0.03)), np.eye(4), pregrasp_distance_m=0.1
     )
 
@@ -91,16 +103,16 @@ class TopDownGraspsTest(absltest.TestCase):
     ]
     world_t_object[:3, 3] = [0.3, 0.2, 0.7]
 
-    best = candidates.top_down_grasps(
-      *_centered_box((0.04, 0.1, 0.03)), world_t_object
-    )[0]
+    best = _top_down_grasps(*_centered_box((0.04, 0.1, 0.03)), world_t_object)[
+      0
+    ]
 
     # The narrow side now spans world y.
     self.assertAlmostEqual(abs(best.grasp[1, 0]), 1.0, places=6)
     self.assertLess(np.linalg.norm(best.grasp[:2, 3] - [0.3, 0.2]), 0.01)
 
   def test_jaws_prefer_the_given_direction(self):
-    found = candidates.top_down_grasps(
+    found = _top_down_grasps(
       *_centered_box((0.04, 0.1, 0.03)),
       np.eye(4),
       preferred_jaw_axis=(-1.0, 0.0, 0.0),
@@ -110,7 +122,7 @@ class TopDownGraspsTest(absltest.TestCase):
 
   def test_part_wider_than_the_open_jaws_has_no_grasp(self):
     self.assertEmpty(
-      candidates.top_down_grasps(*_centered_box((0.08, 0.1, 0.03)), np.eye(4))
+      _top_down_grasps(*_centered_box((0.08, 0.1, 0.03)), np.eye(4))
     )
 
   def test_small_pose_estimate_tilt_keeps_the_grasps(self):
@@ -124,9 +136,7 @@ class TopDownGraspsTest(absltest.TestCase):
     ]
 
     self.assertNotEmpty(
-      candidates.top_down_grasps(
-        *_centered_box((0.04, 0.1, 0.03)), world_t_object
-      )
+      _top_down_grasps(*_centered_box((0.04, 0.1, 0.03)), world_t_object)
     )
 
   def test_tilted_side_faces_have_no_top_down_grasp(self):
@@ -139,7 +149,7 @@ class TopDownGraspsTest(absltest.TestCase):
     ]
 
     self.assertEmpty(
-      candidates.top_down_grasps(
+      _top_down_grasps(
         *_centered_box((0.04, 0.1, 0.03)), world_t_object, max_tilt_deg=2.0
       )
     )
@@ -149,15 +159,13 @@ class TopDownGraspsTest(absltest.TestCase):
     # Too thin to be grasped itself, but in the +x finger's path.
     wall = ((0.015, -0.05, 0.0), (0.005, 0.1, 0.03))
 
-    self.assertNotEmpty(candidates.top_down_grasps(*_boxes(plate), np.eye(4)))
-    self.assertEmpty(
-      candidates.top_down_grasps(*_boxes(plate, wall), np.eye(4))
-    )
+    self.assertNotEmpty(_top_down_grasps(*_boxes(plate), np.eye(4)))
+    self.assertEmpty(_top_down_grasps(*_boxes(plate, wall), np.eye(4)))
 
   def test_planning_is_repeatable(self):
     mesh = _centered_box((0.04, 0.1, 0.03))
-    first = candidates.top_down_grasps(*mesh, np.eye(4))
-    second = candidates.top_down_grasps(*mesh, np.eye(4))
+    first = _top_down_grasps(*mesh, np.eye(4))
+    second = _top_down_grasps(*mesh, np.eye(4))
 
     self.assertEqual(len(first), len(second))
     for a, b in zip(first, second, strict=True):
@@ -168,30 +176,34 @@ class ValidateMeshTest(absltest.TestCase):
   def test_rejects_an_open_mesh(self):
     vertices, triangles = _centered_box((0.04, 0.1, 0.03))
     with self.assertRaisesRegex(ValueError, "closed"):
-      candidates.validate_mesh(vertices, np.delete(triangles, [2, 3], axis=0))
+      workpiece_mesh.validate_mesh(
+        vertices, np.delete(triangles, [2, 3], axis=0)
+      )
 
   def test_rejects_inconsistent_winding(self):
     vertices, triangles = _centered_box((0.04, 0.1, 0.03))
     triangles[4] = triangles[4, ::-1]
     with self.assertRaisesRegex(ValueError, "outward"):
-      candidates.validate_mesh(vertices, triangles)
+      workpiece_mesh.validate_mesh(vertices, triangles)
 
   def test_rejects_a_nonmanifold_edge(self):
     vertices, triangles = _centered_box((0.04, 0.1, 0.03))
     with self.assertRaisesRegex(ValueError, "closed"):
-      candidates.validate_mesh(vertices, np.vstack([triangles, triangles[0]]))
+      workpiece_mesh.validate_mesh(
+        vertices, np.vstack([triangles, triangles[0]])
+      )
 
   def test_rejects_a_degenerate_triangle(self):
     vertices, triangles = _centered_box((0.04, 0.1, 0.03))
     with self.assertRaisesRegex(ValueError, "degenerate"):
-      candidates.validate_mesh(vertices, np.vstack([triangles, [0, 0, 1]]))
+      workpiece_mesh.validate_mesh(vertices, np.vstack([triangles, [0, 0, 1]]))
 
   def test_accepts_duplicated_vertices_at_mesh_seams(self):
     vertices, triangles = _centered_box((0.04, 0.1, 0.03))
     split_vertices = vertices[triangles].reshape(-1, 3)
     split_triangles = np.arange(len(split_vertices)).reshape(-1, 3)
 
-    actual_vertices, actual_triangles = candidates.validate_mesh(
+    actual_vertices, actual_triangles = workpiece_mesh.validate_mesh(
       split_vertices, split_triangles
     )
 
@@ -201,7 +213,7 @@ class ValidateMeshTest(absltest.TestCase):
   def test_rejects_inward_facing_triangles(self):
     vertices, triangles = _centered_box((0.04, 0.1, 0.03))
     with self.assertRaisesRegex(ValueError, "outward"):
-      candidates.validate_mesh(vertices, triangles[:, ::-1])
+      workpiece_mesh.validate_mesh(vertices, triangles[:, ::-1])
 
 
 if __name__ == "__main__":

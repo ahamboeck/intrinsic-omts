@@ -18,9 +18,10 @@ py_library(
     srcs = ["pick.py"],
     deps = [
         ":motions",
+        ":regrasp",
         "//src/core:config",
         "//src/core:infeed",
-        "//src/hardware:grasping",
+        "//src/grasping:interface",
         "//src/hardware:gripper",
         "//src/hardware:machine",
         "//src/hardware:robot",
@@ -59,8 +60,9 @@ py_library(
     srcs = ["unload_machine.py"],
     deps = [
         ":motions",
+        ":regrasp",
         "//src/core:config",
-        "//src/hardware:grasping",
+        "//src/grasping:interface",
         "//src/hardware:gripper",
         "//src/hardware:machine",
         "//src/hardware:robot",
@@ -73,11 +75,24 @@ py_library(
     srcs = ["return_infeed.py"],
     deps = [
         ":motions",
+        ":regrasp",
         "//src/core:config",
-        "//src/hardware:grasping",
+        "//src/grasping:interface",
         "//src/hardware:gripper",
         "//src/hardware:robot",
         "//src/utils:random_placement",
+        "//src/utils:script_utils",
+        "@intrinsic-core//intrinsic_sdk/intrinsic/solutions:behavior_tree",
+    ],
+)
+
+py_library(
+    name = "regrasp",
+    srcs = ["regrasp.py"],
+    deps = [
+        "//src/core:config",
+        "//src/hardware:robot",
+        "//src/utils:regrasp_frames",
         "//src/utils:script_utils",
         "@intrinsic-core//intrinsic_sdk/intrinsic/solutions:behavior_tree",
     ],
@@ -94,7 +109,7 @@ py_library(
         ":unload_machine",
         "//src/core:config",
         "//src/core:infeed",
-        "//src/hardware:grasping",
+        "//src/grasping:interface",
         "//src/hardware:gripper",
         "//src/hardware:machine",
         "//src/hardware:robot",

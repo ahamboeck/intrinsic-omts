@@ -1,0 +1,38 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package omts.grasping;
+
+// Gripper geometry that grasp planners plan with, set per cell in
+// `gripper.model`. A planner supports one or more kinds and reads only the
+// numbers of its kind, so a new gripper of a supported kind needs new numbers,
+// not a new planner.
+message GripperModel {
+  oneof kind {
+    ParallelJawGripper parallel_jaw = 1;
+  }
+}
+
+// Two fingers closing on opposite contacts, such as the Robotiq Hand-E.
+message ParallelJawGripper {
+  // Smallest gap between the finger pads, when fully closed.
+  double min_width_m = 1;
+  // Largest gap between the finger pads, when fully open.
+  double max_width_m = 2;
+  // Distance along the tool frame's +Z from the tool frame to where the finger
+  // pads touch the part.
+  double contact_depth_m = 3;
+}

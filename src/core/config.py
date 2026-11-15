@@ -16,11 +16,14 @@
 
 import dataclasses
 import pathlib
+from collections.abc import Mapping
 from typing import Any, TypeVar
 
 import yaml
+from google.protobuf import json_format
 
-from src.core.types import GraspPlannerType, Touchdown
+from src.core.types import Touchdown
+from src.grasping import gripper_model_pb2
 
 _T = TypeVar("_T")
 
@@ -56,6 +59,9 @@ class GripperConfig:
       dio_close_pin: Digital output index to close `DioGripper`.
       dio_device_name: Optional ADIO device resource name for `DioGripper`.
       dio_output_block_name: Digital output block name for `DioGripper`.
+      model: Gripper geometry that grasp planners plan with, such as the jaw
+        widths of a parallel-jaw gripper. Optional for planners that need no
+        geometry.
   """
 
   type: str
@@ -67,6 +73,7 @@ class GripperConfig:
   dio_close_pin: int | None = None
   dio_device_name: str | None = None
   dio_output_block_name: str | None = None
+  model: gripper_model_pb2.GripperModel | None = None
 
   def __post_init__(self) -> None:
     if self.type == "robotiq":
@@ -222,96 +229,25 @@ class ReturnShiftConfig:
 
 @dataclasses.dataclass(frozen=True)
 class GraspConfig:
-  """Selects and tunes the grasp planning backend used during the infeed pick.
+  """Selects and tunes the grasp planner.
 
-  Only `planner` is meaningful for the built-in `'cuboid_center'` backend; the
-  `moveit_*` fields are forwarded to the `intrinsic-moveit` integration and are
-  ignored otherwise.
+  In YAML, every key of the `grasp` section other than `planner` and
+  `simulation_only` is a planner's own section, such as `grasp.moveit`. The
+  planner registry in `src/grasping/registry.py` validates the planner name
+  and parses those sections.
 
   Attributes:
-      planner: Grasp planner backend (`'cuboid_center'`, `'moveit'`, or
-        `'antipodal_mesh'`).
-      antipodal_mesh_simulation_only: Required acknowledgement that the
-        `'antipodal_mesh'` planner runs against a simulated deployment.
-      antipodal_mesh_pregrasp_distance_m: Distance in meters between the
-        planned grasp and pre-grasp frames.
-      antipodal_mesh_max_approach_tilt_deg: Largest angle, in degrees, between
-        a contact face's normal and the horizontal plane. It also absorbs tilt
-        in the estimated workpiece pose.
-      moveit_tool_frame_name: MoveIt robot model link used as the grasp TCP.
-        This is an SRDF link name, not an Object World frame.
-      moveit_group_name: MoveIt planning group for the arm.
-      moveit_end_effector_group: MoveIt end-effector group.
-      moveit_surfaces: Workpiece surfaces to sample grasp candidates on
-        (`0:+X, 1:-X, 2:+Y, 3:-Y, 4:+Z, 5:-Z`). Empty means every surface.
-      moveit_num_rotations: Grasp candidates per surface, spread evenly about
-        the surface normal.
-      moveit_retract_dist_m: Distance in meters between the planned grasp and
-        pre-grasp frames.
-      moveit_timeout_ms: Grasp planning timeout in milliseconds.
-      moveit_settle_seconds: Dwell before planning, letting the MoveIt planning
-        scene catch up with the workpiece pose perception just published.
+      planner: Name of the registered grasp planner.
+      simulation_only: Acknowledges that the deployment is simulated, as
+        required by planners that are not verified on hardware.
+      settings: Planner name to its config section, as loaded from YAML.
   """
 
-  planner: str = GraspPlannerType.CUBOID_CENTER.value
-  moveit_tool_frame_name: str = "hande_tcp"
-  moveit_group_name: str = "ur_manipulator"
-  moveit_end_effector_group: str = "hand"
-  moveit_surfaces: tuple[int, ...] = ()
-  moveit_num_rotations: int = 4
-  moveit_retract_dist_m: float = 0.05
-  moveit_timeout_ms: float = 15000.0
-  moveit_settle_seconds: float = 0.3
-  antipodal_mesh_simulation_only: bool = False
-  antipodal_mesh_pregrasp_distance_m: float = 0.1
-  antipodal_mesh_max_approach_tilt_deg: float = 10.0
-
-  def __post_init__(self) -> None:
-    valid = sorted(member.value for member in GraspPlannerType)
-    if self.planner not in valid:
-      raise ValueError(
-        f"Unsupported grasp planner '{self.planner}' in section 'grasp'. "
-        f"Expected one of {valid}."
-      )
-    if any(not 0 <= surface <= 5 for surface in self.moveit_surfaces):
-      raise ValueError(
-        f"moveit_surfaces entries must be in 0..5, got "
-        f"{list(self.moveit_surfaces)}."
-      )
-    if self.moveit_num_rotations <= 0:
-      raise ValueError(
-        f"moveit_num_rotations must be positive, got "
-        f"{self.moveit_num_rotations}."
-      )
-    if self.moveit_retract_dist_m <= 0.0:
-      raise ValueError(
-        f"moveit_retract_dist_m must be positive, got "
-        f"{self.moveit_retract_dist_m}."
-      )
-    if self.moveit_timeout_ms <= 0.0:
-      raise ValueError(
-        f"moveit_timeout_ms must be positive, got {self.moveit_timeout_ms}."
-      )
-    if self.moveit_settle_seconds < 0.0:
-      raise ValueError(
-        f"moveit_settle_seconds must not be negative, got "
-        f"{self.moveit_settle_seconds}."
-      )
-    if self.antipodal_mesh_pregrasp_distance_m <= 0.0:
-      raise ValueError(
-        f"antipodal_mesh_pregrasp_distance_m must be positive, got "
-        f"{self.antipodal_mesh_pregrasp_distance_m}."
-      )
-    if not 0.0 <= self.antipodal_mesh_max_approach_tilt_deg < 90.0:
-      raise ValueError(
-        f"antipodal_mesh_max_approach_tilt_deg must be in [0, 90), got "
-        f"{self.antipodal_mesh_max_approach_tilt_deg}."
-      )
-
-  @property
-  def planner_type(self) -> GraspPlannerType:
-    """Returns `planner` as its enum member."""
-    return GraspPlannerType(self.planner)
+  planner: str = "cuboid_center"
+  simulation_only: bool = False
+  settings: Mapping[str, Mapping[str, Any]] = dataclasses.field(
+    default_factory=dict
+  )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -453,14 +389,44 @@ def _construct_section(
         section_dict[joint_key] = tuple(
           float(x) for x in section_dict[joint_key]
         )
-  elif section_name == "grasp" and isinstance(
-    section_dict.get("moveit_surfaces"), list
-  ):
-    section_dict["moveit_surfaces"] = tuple(
-      int(x) for x in section_dict["moveit_surfaces"]
+  elif section_name == "gripper" and section_dict.get("model") is not None:
+    section_dict["model"] = _parse_gripper_model(
+      section_dict["model"], file_path
+    )
+  elif section_name == "grasp":
+    planner = section_dict.pop("planner", GraspConfig.planner)
+    simulation_only = section_dict.pop("simulation_only", False)
+    for name, settings in section_dict.items():
+      if settings is not None and not isinstance(settings, dict):
+        raise ValueError(
+          f"Section 'grasp.{name}' in {file_path} must be a mapping of "
+          f"planner settings."
+        )
+    return cls(
+      planner=planner,
+      simulation_only=bool(simulation_only),
+      settings={
+        name: dict(value or {}) for name, value in section_dict.items()
+      },
     )
 
   return cls(**section_dict)
+
+
+def _parse_gripper_model(
+  raw: Any, file_path: pathlib.Path
+) -> gripper_model_pb2.GripperModel:
+  """Parses `gripper.model`, which must name exactly one gripper kind."""
+  try:
+    model = json_format.ParseDict(raw, gripper_model_pb2.GripperModel())
+  except json_format.ParseError as exc:
+    raise ValueError(f"Invalid 'gripper.model' in {file_path}: {exc}") from exc
+  if model.WhichOneof("kind") is None:
+    raise ValueError(
+      f"'gripper.model' in {file_path} must name a gripper kind, such as "
+      "'parallel_jaw'."
+    )
+  return model
 
 
 def load_app_config(path: str | pathlib.Path) -> AppConfig:

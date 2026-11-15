@@ -25,7 +25,7 @@ blackboard, downstream Cartesian motions can simply target the output frames by
 name (see `third_party.intrinsic_moveit.moveit_grasp_planning`).
 
 `MoveItGraspPlannerInterface` extends the first-party
-`src.hardware.grasping.GraspPlannerInterface`, so `//src:omts_app` can select
+`src.grasping.interface.GraspPlannerInterface`, so `//src:omts_app` can select
 MoveIt as its grasp planner. The MoveIt-native `build_plan_grasps_task` stays
 available for callers that need the full request surface, such as the
 `moveit_plan_grasp_and_move` CLI tool.
@@ -38,7 +38,7 @@ from typing import Any
 from intrinsic.solutions import behavior_tree as bt
 from intrinsic.world.proto import object_world_refs_pb2
 
-from src.hardware.grasping import GraspPlannerInterface
+from src.grasping.interface import GraspPlannerInterface
 from src.utils.script_utils import create_dwell_task
 
 # Object surface indices understood by the grasp planning service. Indices refer

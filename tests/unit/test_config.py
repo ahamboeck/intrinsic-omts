@@ -32,9 +32,23 @@ from src.core.config import (
   load_app_config,
   with_workpiece,
 )
-from src.core.types import GraspPlannerType, SimulationMode
-from src.hardware.grasp_planners import create_grasp_planner
-from src.hardware.grasping import GraspPlannerInterface
+from src.core.types import SimulationMode
+from src.grasping import registry
+from src.grasping.interface import GraspPlannerInterface
+from src.grasping.planners.cuboid_center.adapter import (
+  CuboidCenterGraspPlanner,
+)
+from src.grasping.planners.moveit.adapter import MoveItSettings
+
+
+def _write_config(raw: dict) -> str:
+  with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as tmp:
+    yaml.safe_dump(raw, tmp)
+    return tmp.name
+
+
+def _raw_config(path: str = "configs/omts/app_config.yaml") -> dict:
+  return yaml.safe_load(pathlib.Path(path).read_text(encoding="utf-8"))
 
 
 class ConfigTest(absltest.TestCase):
@@ -81,44 +95,57 @@ class ConfigTest(absltest.TestCase):
     self.assertEqual(config.robot.enclosure_object_name, "enclosure")
 
   def test_omitted_grasp_section_defaults_to_cuboid_center(self):
-    raw = yaml.safe_load(
-      pathlib.Path("configs/omts/app_config.yaml").read_text(encoding="utf-8")
-    )
+    raw = _raw_config()
     del raw["grasp"]
-    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as tmp:
-      yaml.safe_dump(raw, tmp)
-      tmp_path = tmp.name
 
-    config = load_app_config(tmp_path)
-    self.assertEqual(config.grasp.planner_type, GraspPlannerType.CUBOID_CENTER)
+    config = load_app_config(_write_config(raw))
+    self.assertEqual(config.grasp.planner, "cuboid_center")
+    self.assertFalse(config.grasp.simulation_only)
+    self.assertEqual(config.grasp.settings, {})
 
-  def test_grasp_section_selects_moveit(self):
-    raw = yaml.safe_load(
-      pathlib.Path("configs/omts/app_config.yaml").read_text(encoding="utf-8")
-    )
+  def test_grasp_section_selects_moveit_and_keeps_its_section(self):
+    raw = _raw_config()
     raw["grasp"]["planner"] = "moveit"
-    raw["grasp"]["moveit_surfaces"] = [4]
-    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as tmp:
-      yaml.safe_dump(raw, tmp)
-      tmp_path = tmp.name
+    raw["grasp"]["moveit"]["surfaces"] = [4]
 
-    config = load_app_config(tmp_path)
-    self.assertEqual(config.grasp.planner_type, GraspPlannerType.MOVEIT)
-    self.assertEqual(config.grasp.moveit_surfaces, (4,))
-
-  def test_unsupported_grasp_planner_fails_loudly(self):
-    raw = yaml.safe_load(
-      pathlib.Path("configs/omts/app_config.yaml").read_text(encoding="utf-8")
+    config = load_app_config(_write_config(raw))
+    self.assertEqual(config.grasp.planner, "moveit")
+    self.assertEqual(
+      registry.planner_settings(config.grasp, "moveit").surfaces, (4,)
     )
-    raw["grasp"] = {"planner": "nonexistent_planner"}
-    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as tmp:
-      yaml.safe_dump(raw, tmp)
-      tmp_path = tmp.name
 
-    with self.assertRaisesRegex(
-      ValueError, "Unsupported grasp planner 'nonexistent_planner'"
-    ):
-      load_app_config(tmp_path)
+  def test_grasp_section_reads_the_simulation_only_acknowledgement(self):
+    raw = _raw_config()
+    raw["grasp"] = {"planner": "antipodal_mesh", "simulation_only": True}
+
+    config = load_app_config(_write_config(raw))
+    self.assertTrue(config.grasp.simulation_only)
+    self.assertEqual(config.grasp.settings, {})
+
+  def test_planner_section_must_be_a_mapping(self):
+    raw = _raw_config()
+    raw["grasp"]["moveit"] = 4
+    with self.assertRaisesRegex(ValueError, "'grasp.moveit'"):
+      load_app_config(_write_config(raw))
+
+  def test_loads_the_gripper_model(self):
+    config = load_app_config("configs/omts/app_config.yaml")
+    self.assertEqual(config.gripper.model.WhichOneof("kind"), "parallel_jaw")
+    self.assertAlmostEqual(config.gripper.model.parallel_jaw.max_width_m, 0.06)
+
+  def test_gripper_model_is_optional(self):
+    raw = _raw_config()
+    del raw["gripper"]["model"]
+    self.assertIsNone(load_app_config(_write_config(raw)).gripper.model)
+
+  def test_invalid_gripper_model_fails_loudly(self):
+    raw = _raw_config()
+    raw["gripper"]["model"] = {"parallel_jaw": {"max_width": 0.06}}
+    with self.assertRaisesRegex(ValueError, "gripper.model"):
+      load_app_config(_write_config(raw))
+    raw["gripper"]["model"] = {}
+    with self.assertRaisesRegex(ValueError, "gripper kind"):
+      load_app_config(_write_config(raw))
 
   def test_missing_required_section_fails_loudly(self):
     yaml_content = """
@@ -256,87 +283,79 @@ gripper:
       omts_main.main(["main.py", "unexpected_arg"])
 
 
-class GraspConfigTest(absltest.TestCase):
-  """Unit tests for the grasp planner selection dataclass."""
+class _FakeGraspPlanner(GraspPlannerInterface):
+  def __init__(self, settings):
+    self.settings = settings
 
-  def test_defaults_to_cuboid_center(self):
-    self.assertEqual(GraspConfig().planner_type, GraspPlannerType.CUBOID_CENTER)
+  def build_plan_grasp_task(self, workpiece_object_name, *args, **kwargs):
+    raise NotImplementedError
 
-  def test_planner_type_returns_the_matching_enum_member(self):
-    config = GraspConfig(planner="cuboid_center")
-    self.assertIs(config.planner_type, GraspPlannerType.CUBOID_CENTER)
+
+@dataclasses.dataclass(frozen=True)
+class _FakeSettings:
+  cup_count: int = 1
+
+
+class GraspPlannerRegistryTest(absltest.TestCase):
+  """Unit tests for `src.grasping.registry`."""
+
+  def setUp(self):
+    super().setUp()
+    self.config = load_app_config("configs/omts/app_config.yaml")
+
+  def _with_grasp(self, **changes) -> AppConfig:
+    return dataclasses.replace(
+      self.config, grasp=dataclasses.replace(self.config.grasp, **changes)
+    )
 
   def test_rejects_an_unknown_planner(self):
-    with self.assertRaises(ValueError):
-      GraspConfig(planner="nonexistent_planner")
+    with self.assertRaisesRegex(
+      ValueError, "Unsupported grasp planner 'nonexistent_planner'"
+    ) as ctx:
+      registry.validate(GraspConfig(planner="nonexistent_planner"))
+    self.assertIn("cuboid_center", str(ctx.exception))
 
-  def test_error_names_the_section_and_the_supported_values(self):
-    with self.assertRaises(ValueError) as ctx:
-      GraspConfig(planner="Cuboid_Center")
-    message = str(ctx.exception)
-    self.assertIn("'grasp'", message)
-    self.assertIn("cuboid_center", message)
+  def test_rejects_a_section_for_an_unknown_planner(self):
+    with self.assertRaisesRegex(ValueError, "nonexistent_planner"):
+      registry.validate(GraspConfig(settings={"nonexistent_planner": {}}))
 
-  def test_is_immutable(self):
-    config = GraspConfig()
-    with self.assertRaises(dataclasses.FrozenInstanceError):
-      config.planner = "something_else"
+  def test_rejects_unknown_fields_in_a_planner_section(self):
+    grasp = GraspConfig(settings={"moveit": {"surface": [4]}})
+    with self.assertRaisesRegex(ValueError, r"\['surface'\].*grasp.moveit"):
+      registry.validate(grasp)
 
-  def test_empty_moveit_surfaces_means_every_surface(self):
-    self.assertEqual(GraspConfig().moveit_surfaces, ())
-
-  def test_rejects_out_of_range_moveit_surface(self):
-    with self.assertRaisesRegex(ValueError, "moveit_surfaces"):
-      GraspConfig(moveit_surfaces=(0, 6))
-
-  def test_rejects_non_positive_moveit_numeric_fields(self):
-    with self.assertRaisesRegex(ValueError, "moveit_num_rotations"):
-      GraspConfig(moveit_num_rotations=0)
-    with self.assertRaisesRegex(ValueError, "moveit_retract_dist_m"):
-      GraspConfig(moveit_retract_dist_m=0.0)
-    with self.assertRaisesRegex(ValueError, "moveit_timeout_ms"):
-      GraspConfig(moveit_timeout_ms=-1.0)
-
-  def test_rejects_negative_settle_but_allows_zero(self):
-    with self.assertRaisesRegex(ValueError, "moveit_settle_seconds"):
-      GraspConfig(moveit_settle_seconds=-0.1)
+  def test_omitted_section_uses_defaults(self):
     self.assertEqual(
-      GraspConfig(moveit_settle_seconds=0.0).moveit_settle_seconds, 0.0
+      registry.planner_settings(GraspConfig(), "moveit"), MoveItSettings()
     )
 
+  def test_moveit_settings_are_validated(self):
+    self.assertEqual(MoveItSettings().surfaces, ())
+    with self.assertRaisesRegex(ValueError, "moveit.surfaces"):
+      MoveItSettings(surfaces=(0, 6))
+    with self.assertRaisesRegex(ValueError, "moveit.num_rotations"):
+      MoveItSettings(num_rotations=0)
+    with self.assertRaisesRegex(ValueError, "moveit.retract_dist_m"):
+      MoveItSettings(retract_dist_m=0.0)
+    with self.assertRaisesRegex(ValueError, "moveit.timeout_ms"):
+      MoveItSettings(timeout_ms=-1.0)
+    with self.assertRaisesRegex(ValueError, "moveit.settle_seconds"):
+      MoveItSettings(settle_seconds=-0.1)
+    self.assertEqual(MoveItSettings(settle_seconds=0.0).settle_seconds, 0.0)
 
-class GraspPlannerFactoryTest(absltest.TestCase):
-  """Unit tests for `create_grasp_planner`."""
+  def test_cuboid_center_is_a_planner(self):
+    planner = registry.create_grasp_planner(mock.MagicMock(), self.config)
+    self.assertIsInstance(planner, CuboidCenterGraspPlanner)
 
-  def test_cuboid_center_needs_no_planner_object(self):
-    """Its frames come from the perception pipeline, not from a planner."""
-    planner = create_grasp_planner(
-      planner_type=GraspPlannerType.CUBOID_CENTER,
-      solution=mock.MagicMock(),
-      config=GraspConfig(),
-      tool_object_name="gripper",
-    )
-    self.assertIsNone(planner)
-
-  def test_moveit_forwards_configuration(self):
-    config = GraspConfig(
-      planner=GraspPlannerType.MOVEIT.value,
-      moveit_surfaces=(4,),
-      moveit_num_rotations=8,
-      moveit_settle_seconds=1.5,
-    )
-
-    planner = create_grasp_planner(
-      planner_type=GraspPlannerType.MOVEIT,
-      solution=mock.MagicMock(),
-      config=config,
-      tool_object_name="gripper",
+  def test_moveit_forwards_its_section(self):
+    planner = registry.create_grasp_planner(
+      mock.MagicMock(), self.config, "moveit"
     )
 
     self.assertIsInstance(planner, GraspPlannerInterface)
-    self.assertEqual(planner.default_surfaces, (4,))
-    self.assertEqual(planner.default_num_rotations, 8)
-    self.assertEqual(planner.default_settle_seconds, 1.5)
+    self.assertEqual(planner.default_surfaces, (0, 1, 4, 5))
+    self.assertEqual(planner.default_num_rotations, 4)
+    self.assertEqual(planner.default_settle_seconds, 0.3)
 
   def test_moveit_without_its_skill_fails_loudly(self):
     """Fails at startup, not mid-cycle, if the solution lacks the skill."""
@@ -344,22 +363,39 @@ class GraspPlannerFactoryTest(absltest.TestCase):
     del solution.skills.ai.intrinsic.moveit_plan_grasp_skill
 
     with self.assertRaisesRegex(ValueError, "moveit_plan_grasp_skill"):
-      create_grasp_planner(
-        planner_type=GraspPlannerType.MOVEIT,
-        solution=solution,
-        config=GraspConfig(planner=GraspPlannerType.MOVEIT.value),
-        tool_object_name="gripper",
-      )
+      registry.create_grasp_planner(solution, self.config, "moveit")
 
-  def test_unhandled_backend_fails_loudly(self):
-    """Guards against adding an enum member without a factory branch."""
-    with self.assertRaisesRegex(ValueError, "Unhandled grasp planner"):
-      create_grasp_planner(
-        planner_type=mock.sentinel.future_planner,
-        solution=mock.MagicMock(),
-        config=GraspConfig(),
-        tool_object_name="gripper",
+  def test_simulation_only_planner_needs_the_acknowledgement(self):
+    # As when --grasp_planner=antipodal_mesh overrides a cuboid_center config.
+    with self.assertRaisesRegex(ValueError, "simulation only"):
+      registry.create_grasp_planner(
+        mock.MagicMock(), self.config, "antipodal_mesh"
       )
+    planner = registry.create_grasp_planner(
+      mock.MagicMock(), self._with_grasp(simulation_only=True), "antipodal_mesh"
+    )
+    self.assertTrue(planner.simulation_only)
+
+  def test_rejects_a_gripper_kind_the_planner_does_not_support(self):
+    planner = _FakeGraspPlanner(None)
+    planner.gripper_kinds = frozenset({"suction"})
+    entry = registry.PlannerEntry(lambda *_: planner)
+    with mock.patch.dict(registry.PLANNERS, {"fake": entry}):
+      with self.assertRaisesRegex(ValueError, "'parallel_jaw' gripper"):
+        registry.create_grasp_planner(mock.MagicMock(), self.config, "fake")
+
+  def test_a_new_planner_only_needs_a_registry_entry(self):
+    """Registering a planner makes it selectable and configurable."""
+    entry = registry.PlannerEntry(
+      lambda solution, config, settings: _FakeGraspPlanner(settings),
+      _FakeSettings,
+    )
+    config = self._with_grasp(
+      planner="fake", settings={"fake": {"cup_count": 2}}
+    )
+    with mock.patch.dict(registry.PLANNERS, {"fake": entry}):
+      planner = registry.create_grasp_planner(mock.MagicMock(), config)
+    self.assertEqual(planner.settings, _FakeSettings(cup_count=2))
 
 
 class WithWorkpieceTest(absltest.TestCase):
@@ -399,26 +435,13 @@ class GraspPlannerSelectionTest(absltest.TestCase):
 
   @mock.patch("src.main.deployments.connect")
   @mock.patch("src.main.build_machine_tending_behavior_tree")
-  def test_cuboid_center_passes_no_planner_to_the_tree(
+  def test_cuboid_center_is_passed_to_the_tree(
     self, mock_build_bt: mock.MagicMock, mock_connect: mock.MagicMock
   ):
     kwargs = self._run_pipeline(mock_build_bt, mock_connect)
-    self.assertIsNone(kwargs["grasp_planner"])
+    self.assertIsInstance(kwargs["grasp_planner"], CuboidCenterGraspPlanner)
 
-  @mock.patch("src.main.deployments.connect")
-  @mock.patch("src.main.build_machine_tending_behavior_tree")
-  def test_cli_override_is_accepted(
-    self, mock_build_bt: mock.MagicMock, mock_connect: mock.MagicMock
-  ):
-    """The override path must work even when it names the current default."""
-    kwargs = self._run_pipeline(
-      mock_build_bt,
-      mock_connect,
-      grasp_planner_override=GraspPlannerType.CUBOID_CENTER,
-    )
-    self.assertIsNone(kwargs["grasp_planner"])
-
-  @mock.patch("src.main.create_grasp_planner")
+  @mock.patch("src.main.registry.create_grasp_planner")
   @mock.patch("src.main.deployments.connect")
   @mock.patch("src.main.build_machine_tending_behavior_tree")
   def test_cli_override_takes_precedence_over_config(
@@ -427,22 +450,18 @@ class GraspPlannerSelectionTest(absltest.TestCase):
     mock_connect: mock.MagicMock,
     mock_factory: mock.MagicMock,
   ):
-    """The shipped config says cuboid_center, so MOVEIT can only be the flag."""
+    """The shipped config says cuboid_center, so moveit can only be the flag."""
     planner = mock.MagicMock()
     mock_factory.return_value = planner
 
     kwargs = self._run_pipeline(
-      mock_build_bt,
-      mock_connect,
-      grasp_planner_override=GraspPlannerType.MOVEIT,
+      mock_build_bt, mock_connect, grasp_planner_override="moveit"
     )
 
-    factory_kwargs = mock_factory.call_args.kwargs
-    self.assertIs(factory_kwargs["planner_type"], GraspPlannerType.MOVEIT)
-    self.assertEqual(factory_kwargs["tool_object_name"], "gripper")
+    self.assertEqual(mock_factory.call_args.args[2], "moveit")
     self.assertIs(kwargs["grasp_planner"], planner)
 
-  @mock.patch("src.main.create_grasp_planner")
+  @mock.patch("src.main.registry.create_grasp_planner")
   @mock.patch("src.main.deployments.connect")
   @mock.patch("src.main.build_machine_tending_behavior_tree")
   def test_config_is_used_when_no_override_is_given(
@@ -451,14 +470,20 @@ class GraspPlannerSelectionTest(absltest.TestCase):
     mock_connect: mock.MagicMock,
     mock_factory: mock.MagicMock,
   ):
-    mock_factory.return_value = None
-
     self._run_pipeline(mock_build_bt, mock_connect)
 
-    self.assertIs(
-      mock_factory.call_args.kwargs["planner_type"],
-      GraspPlannerType.CUBOID_CENTER,
-    )
+    self.assertEqual(mock_factory.call_args.args[2], "cuboid_center")
+
+  @mock.patch("src.main.deployments.connect")
+  @mock.patch("src.main.build_machine_tending_behavior_tree")
+  def test_invalid_planner_is_rejected_before_connecting(
+    self, mock_build_bt: mock.MagicMock, mock_connect: mock.MagicMock
+  ):
+    with self.assertRaisesRegex(ValueError, "Unsupported grasp planner"):
+      self._run_pipeline(
+        mock_build_bt, mock_connect, grasp_planner_override="nonexistent"
+      )
+    mock_connect.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ from typing import Any
 from absl.testing import absltest
 from intrinsic.solutions import behavior_tree as bt
 
-from src.hardware.grasping import GraspPlannerInterface
+from src.grasping.interface import GraspPlannerInterface
 from src.hardware.robot import Robot
 from third_party.intrinsic_moveit.moveit_grasp_planner import (
   SURFACE_Z_NEG,

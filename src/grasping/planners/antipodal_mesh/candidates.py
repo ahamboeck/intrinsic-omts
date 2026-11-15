@@ -18,34 +18,12 @@ Samples surface points, casts a ray from each one straight through the part to
 find the opposite contact, and keeps pairs that a top-down parallel-jaw
 gripper can close on. Reachability and collisions are not checked here; the
 `antipodal_mesh_plan_grasp` skill checks each candidate with the motion planner.
+The mesh is expected to be validated by `src.grasping.workpiece_mesh`.
 """
 
 import dataclasses
 
 import numpy as np
-
-MAX_TRIANGLES = 10000
-
-
-@dataclasses.dataclass(frozen=True)
-class GripperModel:
-  """Parallel-jaw geometry that matters for choosing contacts.
-
-  Attributes:
-    min_width_m: Smallest jaw gap the fingers can close to.
-    max_width_m: Jaw gap when fully open.
-    contact_depth_m: Distance along the tool z axis from the tool frame to the
-      point where the finger pads meet the part.
-  """
-
-  min_width_m: float
-  max_width_m: float
-  contact_depth_m: float
-
-
-# Robotiq Hand-E with OMTS's finger offset patch, from the SDF colliders: the
-# fingertip spheres close from 60 to 10 mm, 22 mm below `tool_frame`.
-HANDE = GripperModel(min_width_m=0.01, max_width_m=0.06, contact_depth_m=0.022)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -61,45 +39,6 @@ class Candidate:
   grasp: np.ndarray
   pregrasp: np.ndarray
   width_m: float
-
-
-def validate_mesh(vertices, triangles):
-  """Returns the mesh as (N, 3) float and (M, 3) int arrays, or raises."""
-  vertices = np.asarray(vertices, dtype=float)
-  triangles = np.asarray(triangles, dtype=int)
-  if vertices.ndim != 2 or vertices.shape[1] != 3:
-    raise ValueError("vertices must be a list of [x, y, z] points.")
-  if triangles.ndim != 2 or triangles.shape[1] != 3:
-    raise ValueError("triangles must be a list of vertex index triples.")
-  if not 0 < len(triangles) <= MAX_TRIANGLES:
-    raise ValueError(f"Expected 1 to {MAX_TRIANGLES} triangles.")
-  if triangles.min() < 0 or triangles.max() >= len(vertices):
-    raise ValueError("A triangle references a missing vertex.")
-  if not np.isfinite(vertices).all():
-    raise ValueError("vertices must be finite.")
-  corners = vertices[triangles]
-  if np.any(
-    np.linalg.norm(
-      np.cross(corners[:, 1] - corners[:, 0], corners[:, 2] - corners[:, 0]),
-      axis=1,
-    )
-    == 0
-  ):
-    raise ValueError("The mesh contains a degenerate triangle.")
-  # GLB seams can store the same point with different vertex indices.
-  _, welded = np.unique(vertices, axis=0, return_inverse=True)
-  faces = welded[triangles]
-  edges = np.concatenate([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]])
-  _, counts = np.unique(np.sort(edges, axis=1), axis=0, return_counts=True)
-  # Every edge must occur exactly twice, once in each direction.
-  if np.any(counts != 2) or len(np.unique(edges, axis=0)) != len(edges):
-    raise ValueError("The mesh must be closed with outward-facing triangles.")
-  volume = np.einsum(
-    "ij,ij->i", corners[:, 0], np.cross(corners[:, 1], corners[:, 2])
-  ).sum()
-  if volume <= 0:
-    raise ValueError("The mesh must be closed with outward-facing triangles.")
-  return vertices, triangles
 
 
 def _ray_hits(origins, directions, corners):
@@ -125,7 +64,7 @@ def top_down_grasps(
   vertices,
   triangles,
   world_t_object,
-  gripper=HANDE,
+  gripper,
   *,
   pregrasp_distance_m=0.1,
   max_tilt_deg=10.0,
@@ -145,7 +84,7 @@ def top_down_grasps(
     vertices: (N, 3) mesh vertices in the object frame.
     triangles: (M, 3) vertex indices, closed and outward facing.
     world_t_object: 4x4 pose of the object in the world.
-    gripper: Jaw geometry.
+    gripper: Jaw geometry, an `omts.grasping.ParallelJawGripper`.
     pregrasp_distance_m: Height of the pregrasp above the grasp.
     max_tilt_deg: Largest angle between a contact face's normal and the
       horizontal plane, which also absorbs tilt in `world_t_object`.

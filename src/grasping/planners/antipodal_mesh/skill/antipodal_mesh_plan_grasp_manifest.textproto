@@ -13,9 +13,9 @@ documentation {
 }
 options {
   python_config {
-    skill_module: "src.skills.antipodal_mesh_plan_grasp.antipodal_mesh_plan_grasp"
-    proto_module: "src.skills.antipodal_mesh_plan_grasp.antipodal_mesh_plan_grasp_pb2"
-    create_skill: "src.skills.antipodal_mesh_plan_grasp.antipodal_mesh_plan_grasp.AntipodalMeshPlanGrasp"
+    skill_module: "src.grasping.planners.antipodal_mesh.skill.antipodal_mesh_plan_grasp"
+    proto_module: "src.grasping.planners.antipodal_mesh.skill.antipodal_mesh_plan_grasp_pb2"
+    create_skill: "src.grasping.planners.antipodal_mesh.skill.antipodal_mesh_plan_grasp.AntipodalMeshPlanGrasp"
   }
 }
 parameter {

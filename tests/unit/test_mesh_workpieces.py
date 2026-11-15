@@ -25,7 +25,9 @@ from google.protobuf import text_format
 from intrinsic.math.python import data_types
 from intrinsic.world.proto import object_world_updates_pb2
 
-from src.grasping import candidates
+from src.core.config import load_app_config
+from src.grasping import workpiece_mesh
+from src.grasping.planners.antipodal_mesh import candidates
 
 # (workpiece, scene updates placing it, its visual mesh)
 _WORKPIECES = (
@@ -66,14 +68,14 @@ def _read_glb(path):
   (primitive,) = gltf["meshes"][0]["primitives"]
   vertices = read(primitive["attributes"]["POSITION"], "<f4", 3)
   if "indices" not in primitive:
-    return candidates.validate_mesh(
+    return workpiece_mesh.validate_mesh(
       vertices, np.arange(len(vertices)).reshape(-1, 3)
     )
   index_type = _INDEX_TYPES[
     gltf["accessors"][primitive["indices"]]["componentType"]
   ]
   triangles = read(primitive["indices"], index_type, 1).reshape(-1, 3)
-  return candidates.validate_mesh(vertices, triangles)
+  return workpiece_mesh.validate_mesh(vertices, triangles)
 
 
 def _scene_pose(scene_path, object_name):
@@ -100,17 +102,18 @@ def _scene_pose(scene_path, object_name):
 
 class MeshWorkpiecesTest(absltest.TestCase):
   def test_workpieces_have_grasp_candidates(self):
+    gripper = load_app_config(
+      "configs/lab_bb_01/app_config.yaml"
+    ).gripper.model.parallel_jaw
     for workpiece, scene_path, mesh_path in _WORKPIECES:
       with self.subTest(workpiece=workpiece):
         found = candidates.top_down_grasps(
-          *_read_glb(mesh_path), _scene_pose(scene_path, workpiece)
+          *_read_glb(mesh_path), _scene_pose(scene_path, workpiece), gripper
         )
         self.assertNotEmpty(found)
         for candidate in found:
           self.assertBetween(
-            candidate.width_m,
-            candidates.HANDE.min_width_m,
-            candidates.HANDE.max_width_m,
+            candidate.width_m, gripper.min_width_m, gripper.max_width_m
           )
 
 

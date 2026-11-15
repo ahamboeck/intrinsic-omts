@@ -12,4 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Mesh grasp candidate generation."""
+"""Grasp planning: the planner contract, the registry and shared helpers."""

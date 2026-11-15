@@ -48,13 +48,24 @@ from src.behaviors.unload_machine import build_unload_machine_subtree
 from src.core.config import load_app_config
 from src.core.infeed import InfeedStrategy, PerceptionInfeedStrategy
 from src.core.types import InfeedMode
-from src.hardware.grasping import GraspPlannerInterface
+from src.grasping import registry
+from src.grasping.interface import (
+  Approach,
+  GraspExecution,
+  GraspPlannerInterface,
+)
 from src.hardware.gripper import DioGripper, GripperInterface, RobotiqGripper
 from src.hardware.machine import CncMachineInterface, DioCncMachine
 from src.hardware.robot import Robot
 from src.hardware.vision import OrbbecVision, VisionInterface
 
 _FAKE_PLANNER_TASK_NAME = "Fake Plan Grasp"
+
+# How the antipodal mesh planner is executed: exact contacts, re-planned at
+# the unload.
+_REGRASP = GraspExecution(
+  open_before_planning=True, approach=Approach.DIRECT, replan_at_unload=True
+)
 
 
 class _FakeGraspPlanner(GraspPlannerInterface):
@@ -183,7 +194,7 @@ class BehaviorsTest(absltest.TestCase):
     self,
   ):
     planner = _FakeGraspPlanner()
-    planner.uses_contact_touchdown = False
+    planner.execution = _REGRASP
     tree = build_pick_from_infeed_subtree(
       self.robot,
       self.gripper,
@@ -193,11 +204,6 @@ class BehaviorsTest(absltest.TestCase):
       grasp_planner=planner,
     )
     self.vision.build_perception_and_spawn_task.assert_called_once()
-    self.assertFalse(
-      self.vision.build_perception_and_spawn_task.call_args.kwargs[
-        "publish_grasp_frames"
-      ]
-    )
     self.robot.build_move_to_contact_task.assert_not_called()
     self.robot.build_move_relative_cartesian_task.assert_not_called()
     names = [node.name for node in tree.children]
@@ -205,8 +211,19 @@ class BehaviorsTest(absltest.TestCase):
     self.assertLess(
       names.index("Open Gripper"), names.index(_FAKE_PLANNER_TASK_NAME)
     )
+    # The part's pose is saved for the return right after planning.
+    self.assertEqual(
+      names.index("Save Workpiece Pose at Grasp"),
+      names.index(_FAKE_PLANNER_TASK_NAME) + 1,
+    )
+    self.assertIn(
+      "save_workpiece_at_grasp(context, params)",
+      tree.children[
+        names.index("Save Workpiece Pose at Grasp")
+      ].proto.task.execute_code.python_code.function_body,
+    )
     self.assertLess(
-      names.index("Approach Mesh Contact Pose"),
+      names.index("Approach Planned Grasp"),
       names.index("Close Gripper (Grasp Part)"),
     )
 
@@ -239,14 +256,8 @@ class BehaviorsTest(absltest.TestCase):
       name="Open CNC Vise"
     )
     self.vision.build_perception_and_spawn_task.assert_called_once_with(
-      approach_offset_z=0.08,
       parent_object="root",
-      pregrasp_frame_name="pre_grasp",
-      grasp_frame_name="grasp",
-      tool_object_name="gripper",
-      tool_frame_name="tool_frame",
-      publish_grasp_frames=True,
-      name="Perception & Dynamic Grasp Frame Update Pipeline",
+      name="Perception & Workpiece Pose Update Pipeline",
     )
     self.robot.build_attach_object_task.assert_called_once_with(
       object_name="raw_stock_2x3x5",
@@ -286,37 +297,40 @@ class BehaviorsTest(absltest.TestCase):
       ],
     )
 
-    # The planner owns the grasp frames, so the heuristic must not also write
-    # them; perception still localizes the part.
-    perception_call = self.vision.build_perception_and_spawn_task.call_args
-    self.assertFalse(perception_call.kwargs["publish_grasp_frames"])
-
-    # The planner refines a pose that perception has already established, so
-    # it must run after the perception pipeline and before the gripper opens.
+    # The planner plans on the pose perception has just established, so it
+    # must run after the perception pipeline and before the gripper opens.
     child_names = [child.name for child in pick_subtree.children]
     self.assertEqual(
       child_names.index(_FAKE_PLANNER_TASK_NAME),
-      child_names.index("Perception & Dynamic Grasp Frame Update Pipeline") + 1,
+      child_names.index("Perception & Workpiece Pose Update Pipeline") + 1,
     )
+    self.assertNotIn("Save Workpiece Pose at Grasp", child_names)
     self.assertLess(
       child_names.index(_FAKE_PLANNER_TASK_NAME),
       child_names.index("Open Gripper"),
     )
 
-  def test_build_infeed_pick_subtree_rejects_planner_without_perception(self):
+  def test_build_infeed_pick_subtree_plans_without_perception(self):
+    """Infeeds that place the part themselves still get a planned grasp."""
     grid_strategy = mock.MagicMock(spec=InfeedStrategy)
     grid_strategy.mode = InfeedMode.GRID
+    planner = _FakeGraspPlanner()
 
-    with self.assertRaises(ValueError):
-      build_pick_from_infeed_subtree(
-        robot=self.robot,
-        gripper=self.gripper,
-        vision=self.vision,
-        infeed_strategy=grid_strategy,
-        config=self.config,
-        machine=self.machine,
-        grasp_planner=_FakeGraspPlanner(),
-      )
+    pick_subtree = build_pick_from_infeed_subtree(
+      robot=self.robot,
+      gripper=self.gripper,
+      vision=self.vision,
+      infeed_strategy=grid_strategy,
+      config=self.config,
+      machine=self.machine,
+      grasp_planner=planner,
+    )
+
+    self.vision.build_perception_and_spawn_task.assert_not_called()
+    self.assertLen(planner.calls, 1)
+    self.assertIn(
+      _FAKE_PLANNER_TASK_NAME, [c.name for c in pick_subtree.children]
+    )
 
   def test_build_master_behavior_tree_forwards_grasp_planner(self):
     planner = _FakeGraspPlanner()
@@ -424,7 +438,7 @@ class BehaviorsTest(absltest.TestCase):
 
   def test_mesh_unload_plans_the_repick_instead_of_touching_down(self):
     planner = _FakeGraspPlanner()
-    planner.uses_contact_touchdown = False
+    planner.execution = _REGRASP
     unload_subtree = build_unload_machine_subtree(
       robot=self.robot,
       gripper=self.gripper,
@@ -450,7 +464,7 @@ class BehaviorsTest(absltest.TestCase):
       names.index("Open Gripper for Unload"), names.index("Plan Unload Grasp")
     )
     self.assertLess(
-      names.index("Approach Unload Contact Pose"),
+      names.index("Approach Unload Grasp"),
       names.index("Grasp Machined Part"),
     )
     self.assertEqual(
@@ -495,12 +509,48 @@ class BehaviorsTest(absltest.TestCase):
     self.assertEmpty(planner.calls)
     self.robot.build_move_to_contact_task.assert_called()
 
+  def test_replanned_unload_can_touch_down_on_the_planned_grasp(self):
+    planner = _FakeGraspPlanner()
+    planner.execution = GraspExecution(replan_at_unload=True)
+    with mock.patch(
+      "src.behaviors.unload_machine.create_seated_approach_tasks",
+      wraps=create_seated_approach_tasks,
+    ) as seating:
+      unload_subtree = build_unload_machine_subtree(
+        robot=self.robot,
+        gripper=self.gripper,
+        machine=self.machine,
+        config=self.config,
+        grasp_planner=planner,
+      )
+
+    self.assertEqual(
+      planner.calls[0]["grasp_frame_name"],
+      f"{self.config.frames.grasp_frame}_unload",
+    )
+    args = seating.call_args.kwargs
+    self.assertEqual(
+      args["frame_name"], f"{self.config.frames.grasp_frame}_unload"
+    )
+    self.assertEqual(
+      args["approach_frames"],
+      [
+        self.config.frames.preplace_vise_frame,
+        f"{self.config.frames.pregrasp_frame}_unload",
+      ],
+    )
+    names = [c.name for c in unload_subtree.children]
+    # Without `open_before_planning`, the gripper opens after planning.
+    self.assertLess(
+      names.index("Plan Unload Grasp"), names.index("Open Gripper for Unload")
+    )
+
   def test_mesh_return_corrects_the_grip_after_shift_without_retract_offset(
     self,
   ):
     self.config = load_app_config("configs/lab_bb_01/app_config.yaml")
     planner = _FakeGraspPlanner()
-    planner.uses_contact_touchdown = False
+    planner.execution = _REGRASP
     with mock.patch(
       "src.behaviors.return_infeed.create_seated_approach_tasks",
       wraps=create_seated_approach_tasks,
@@ -510,7 +560,7 @@ class BehaviorsTest(absltest.TestCase):
       )
     self.assertEqual(tree.children[0].name, "0. Shift Return Placement Frame")
     self.assertIn(
-      "update_mesh_return_frames(context, params)",
+      "update_regrasp_return_frames(context, params)",
       tree.children[1].proto.task.execute_code.python_code.function_body,
     )
     args = seating.call_args.kwargs
@@ -650,14 +700,8 @@ class BehaviorsTest(absltest.TestCase):
     self.assertIsInstance(tree.root, bt.Sequence)
     self.assertEqual(len(tree.root.children), 5)
     self.vision.build_perception_and_spawn_task.assert_called_once_with(
-      approach_offset_z=lab_config.cycle.approach_offset_z,
       parent_object="root",
-      pregrasp_frame_name="pre_grasp",
-      grasp_frame_name="grasp",
-      tool_object_name="gripper",
-      tool_frame_name="tool_frame",
-      publish_grasp_frames=True,
-      name="Perception & Dynamic Grasp Frame Update Pipeline",
+      name="Perception & Workpiece Pose Update Pipeline",
     )
     retract_m = lab_config.cycle.retract_distance_meters
     self.robot.build_move_relative_cartesian_task.assert_any_call(
@@ -1420,6 +1464,7 @@ class HermeticSolutionAndBehaviorTreeContractTest(absltest.TestCase):
       config=config,
       num_cycles_override=num_cycles_override,
       tree_name=f"Hermetic Tree ({config_path})",
+      grasp_planner=registry.create_grasp_planner(solution, config),
     )
     tree.validate_id_uniqueness()
     tree._validate_signatures()
@@ -1460,36 +1505,33 @@ class HermeticSolutionAndBehaviorTreeContractTest(absltest.TestCase):
         if num_cycles != 1:
           self.assertTrue(bt_proto.root.HasField("loop"))
 
-        # Verify OrbbecVision._create_frame_calc_script_task generated a real
-        # FileDescriptorSet, packed parameters Any, and CEL blackboard assignments.
-        calc_nodes = [
-          n
-          for n in all_nodes
-          if n.HasField("task")
-          and n.task.HasField("execute_code")
-          and "Calculate & Update Dynamic Grasp" in n.name
-        ]
-        self.assertLen(calc_nodes, 1)
-        exec_code = calc_nodes[0].task.execute_code
-        self.assertNotEmpty(exec_code.parameter_message_full_name)
-        self.assertNotEmpty(exec_code.file_descriptor_set.file)
+        def script_params(task_name: str, nodes=all_nodes) -> tuple[Any, Any]:
+          """Returns the script and its unpacked parameters for a task."""
+          (node,) = [
+            n
+            for n in nodes
+            if n.HasField("task")
+            and n.task.HasField("execute_code")
+            and n.name == task_name
+          ]
+          exec_code = node.task.execute_code
+          self.assertNotEmpty(exec_code.parameter_message_full_name)
+          self.assertNotEmpty(exec_code.file_descriptor_set.file)
+          params_msg = skill_utils.create_message_from_file_descriptor_set(
+            exec_code.file_descriptor_set,
+            exec_code.parameter_message_full_name,
+          )
+          self.assertTrue(exec_code.parameters.proto.Unpack(params_msg))
+          return exec_code, params_msg
 
-        params_msg = skill_utils.create_message_from_file_descriptor_set(
-          exec_code.file_descriptor_set,
-          exec_code.parameter_message_full_name,
-        )
-        self.assertTrue(exec_code.parameters.proto.Unpack(params_msg))
-        expected_offset_z = load_app_config(config_path).cycle.approach_offset_z
-        self.assertAlmostEqual(
-          params_msg.approach_offset_z, expected_offset_z, places=5
+        # OrbbecVision._create_pose_update_script_task generates a real
+        # FileDescriptorSet, packed parameters Any, and CEL blackboard
+        # assignments.
+        exec_code, params_msg = script_params(
+          "3. Update Detected Workpiece Pose"
         )
         self.assertEqual(params_msg.parent_object, "root")
-        self.assertEqual(params_msg.pregrasp_frame_name, "pre_grasp")
-        self.assertEqual(params_msg.grasp_frame_name, "grasp")
         self.assertEqual(params_msg.camera_name, "orbbec_camera")
-        self.assertEqual(params_msg.tool_object_name, "gripper")
-        self.assertEqual(params_msg.tool_frame_name, "tool_frame")
-
         assignment_map = {
           a.path: a.cel_expression for a in exec_code.parameters.assign
         }
@@ -1506,6 +1548,19 @@ class HermeticSolutionAndBehaviorTreeContractTest(absltest.TestCase):
           self.assertIn(
             "estimates[0].root_t_target.", assignment_map[pose_field]
           )
+
+        # The default cuboid-center planner plans on the updated pose.
+        _, params_msg = script_params("Plan Cuboid-Center Grasp")
+        expected_offset_z = load_app_config(config_path).cycle.approach_offset_z
+        self.assertAlmostEqual(
+          params_msg.approach_offset_z, expected_offset_z, places=5
+        )
+        self.assertEqual(params_msg.parent_object, "root")
+        self.assertEqual(params_msg.workpiece_object_name, "raw_stock_2x3x5")
+        self.assertEqual(params_msg.pregrasp_frame_name, "pre_grasp")
+        self.assertEqual(params_msg.grasp_frame_name, "grasp")
+        self.assertEqual(params_msg.tool_object_name, "gripper")
+        self.assertEqual(params_msg.tool_frame_name, "tool_frame")
 
   def test_tier1_proto_builder_handles_field_metadata_options_and_maps(
     self,

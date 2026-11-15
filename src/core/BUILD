@@ -29,7 +29,9 @@ py_library(
     srcs = ["config.py"],
     deps = [
         ":types",
+        "//src/grasping:gripper_model_py_pb2",
         "@ai_intrinsic_sdks_pip_deps//pyyaml",
+        "@com_google_protobuf//:protobuf_python",
     ],
 )
 

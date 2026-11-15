@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for the antipodal_mesh_plan_grasp skill and its planner backend."""
+"""Tests for the antipodal mesh grasp planner, its skill and the mesh helper."""
 
+import dataclasses
 import types
 from unittest import mock
 
@@ -26,11 +27,17 @@ from intrinsic.math.python import data_types
 from intrinsic.skills.python import skill_interface
 from intrinsic.world.proto import object_world_service_pb2
 
-from src.core.config import GraspConfig
-from src.hardware.antipodal_mesh_grasp_planner import AntipodalMeshGraspPlanner
-from src.skills.antipodal_mesh_plan_grasp import (
+from src.core.config import load_app_config
+from src.grasping import gripper_model_pb2, workpiece_mesh
+from src.grasping.interface import Approach
+from src.grasping.planners.antipodal_mesh import adapter
+from src.grasping.planners.antipodal_mesh.skill import (
   antipodal_mesh_plan_grasp,
   antipodal_mesh_plan_grasp_pb2,
+)
+
+_HANDE = gripper_model_pb2.ParallelJawGripper(
+  min_width_m=0.01, max_width_m=0.06, contact_depth_m=0.022
 )
 
 # A 40 x 100 x 30 mm box: graspable across x only.
@@ -180,19 +187,25 @@ class _Planner:
 
 
 def _execute(
-  planner, *, world=None, grasp_frame="grasp", pregrasp_frame="pre_grasp"
+  planner,
+  *,
+  world=None,
+  grasp_frame="grasp",
+  pregrasp_frame="pre_grasp",
+  gripper=_HANDE,
 ):
   world = world or _World()
-  request = types.SimpleNamespace(
-    params=antipodal_mesh_plan_grasp_pb2.AntipodalMeshPlanGraspParams(
-      workpiece_object="box",
-      robot_object="ur_module",
-      tool_object="gripper",
-      tool_frame="tool_frame",
-      grasp_frame=grasp_frame,
-      pregrasp_frame=pregrasp_frame,
-    )
+  params = antipodal_mesh_plan_grasp_pb2.AntipodalMeshPlanGraspParams(
+    workpiece_object="box",
+    robot_object="ur_module",
+    tool_object="gripper",
+    tool_frame="tool_frame",
+    grasp_frame=grasp_frame,
+    pregrasp_frame=pregrasp_frame,
   )
+  if gripper is not None:
+    params.gripper.CopyFrom(gripper)
+  request = types.SimpleNamespace(params=params)
   context = types.SimpleNamespace(
     object_world=world, motion_planner=planner, geometry_service=None
   )
@@ -202,14 +215,22 @@ def _execute(
 
 
 class AntipodalMeshPlanGraspSkillTest(absltest.TestCase):
-  def test_preserves_the_workpiece_pose_relative_to_the_planned_grasp(self):
+  def test_writes_only_the_grasp_and_pregrasp(self):
+    """The behaviours save the part pose for the return, not the planner."""
     _, world = _execute(_Planner())
-    self.assertIn("grasp_workpiece", world.updates)
-    np.testing.assert_allclose(
-      world.updates["grasp"] @ world.updates["grasp_workpiece"],
-      world.object_pose.matrix4x4(),
-      atol=1e-9,
-    )
+    self.assertCountEqual(world.updates, ["grasp", "pre_grasp"])
+
+  def test_requires_the_gripper_geometry(self):
+    with self.assertRaises(skill_interface.InvalidSkillParametersError):
+      _execute(_Planner(), gripper=None)
+
+  def test_plans_with_the_given_jaw_widths(self):
+    # The 40 mm box no longer fits jaws that open to 30 mm.
+    narrow = gripper_model_pb2.ParallelJawGripper()
+    narrow.CopyFrom(_HANDE)
+    narrow.max_width_m = 0.03
+    with self.assertRaises(skill_interface.SkillError):
+      _execute(_Planner(), gripper=narrow)
 
   def test_checks_a_cartesian_linear_approach_from_the_pregrasp(self):
     planner = _Planner()
@@ -267,15 +288,7 @@ class AntipodalMeshPlanGraspSkillTest(absltest.TestCase):
       np.testing.assert_allclose(
         world.updates["grasp_unload"][:2, 3], position[:2], atol=0.01
       )
-    self.assertCountEqual(
-      world.created,
-      [
-        "grasp_workpiece",
-        "grasp_unload",
-        "pre_grasp_unload",
-        "grasp_unload_workpiece",
-      ],
-    )
+    self.assertCountEqual(world.created, ["grasp_unload", "pre_grasp_unload"])
 
   def test_writes_the_first_feasible_candidate(self):
     result, world = _execute(_Planner())
@@ -319,7 +332,7 @@ class WorkpieceMeshTest(absltest.TestCase):
       )
     )
 
-    vertices, triangles = antipodal_mesh_plan_grasp.workpiece_mesh(
+    vertices, triangles = workpiece_mesh.workpiece_mesh(
       types.SimpleNamespace(proto=box), service
     )
 
@@ -337,39 +350,51 @@ class WorkpieceMeshTest(absltest.TestCase):
       "Intrinsic_Visual"
     ]
     with self.assertRaisesRegex(ValueError, "no visual mesh"):
-      antipodal_mesh_plan_grasp.workpiece_mesh(
-        types.SimpleNamespace(proto=box), None
-      )
+      workpiece_mesh.workpiece_mesh(types.SimpleNamespace(proto=box), None)
 
 
 class AntipodalMeshGraspPlannerTest(absltest.TestCase):
-  def test_requires_the_simulation_only_acknowledgement(self):
-    # As when --grasp_planner=antipodal_mesh overrides a cuboid_center config.
-    with self.assertRaisesRegex(ValueError, "simulation only"):
-      AntipodalMeshGraspPlanner(
-        mock.MagicMock(), GraspConfig(), "ur_module", "gripper", "tool_frame"
-      )
+  def setUp(self):
+    super().setUp()
+    self.config = load_app_config("configs/lab_bb_01/app_config.yaml")
+
+  def test_plans_exact_contacts_and_replans_at_the_unload(self):
+    execution = adapter.AntipodalMeshGraspPlanner.execution
+    self.assertTrue(execution.open_before_planning)
+    self.assertIs(execution.approach, Approach.DIRECT)
+    self.assertTrue(execution.replan_at_unload)
+    self.assertTrue(adapter.AntipodalMeshGraspPlanner.simulation_only)
 
   def test_requires_the_robot_object(self):
-    # `create_grasp_planner` defaults it to "" for the other backends.
-    config = GraspConfig(
-      planner="antipodal_mesh", antipodal_mesh_simulation_only=True
+    config = dataclasses.replace(
+      self.config,
+      robot=dataclasses.replace(self.config.robot, arm_part_name=""),
     )
     with self.assertRaisesRegex(ValueError, "robot object"):
-      AntipodalMeshGraspPlanner(
-        mock.MagicMock(), config, "", "gripper", "tool_frame"
-      )
+      adapter.create(mock.MagicMock(), config, adapter.AntipodalMeshSettings())
 
-  @mock.patch("src.hardware.antipodal_mesh_grasp_planner.bt.Task")
-  def test_builds_the_skill_task(self, unused_task):
+  def test_requires_a_parallel_jaw_model(self):
+    config = dataclasses.replace(
+      self.config,
+      gripper=dataclasses.replace(self.config.gripper, model=None),
+    )
+    with self.assertRaisesRegex(ValueError, "parallel_jaw"):
+      adapter.create(mock.MagicMock(), config, adapter.AntipodalMeshSettings())
+
+  def test_rejects_invalid_settings(self):
+    with self.assertRaisesRegex(ValueError, "pregrasp_distance_m"):
+      adapter.AntipodalMeshSettings(pregrasp_distance_m=0.0)
+    with self.assertRaisesRegex(ValueError, "max_approach_tilt_deg"):
+      adapter.AntipodalMeshSettings(max_approach_tilt_deg=90.0)
+
+  @mock.patch.object(adapter.bt, "Task")
+  def test_builds_the_skill_task_with_the_cell_gripper(self, unused_task):
     solution = mock.MagicMock()
-    config = GraspConfig(
-      planner="antipodal_mesh", antipodal_mesh_simulation_only=True
+    planner = adapter.create(
+      solution,
+      self.config,
+      adapter.AntipodalMeshSettings(pregrasp_distance_m=0.12),
     )
-    planner = AntipodalMeshGraspPlanner(
-      solution, config, "ur_module", "gripper", "tool_frame"
-    )
-    self.assertFalse(planner.uses_contact_touchdown)
 
     planner.build_plan_grasp_task("box")
 
@@ -378,6 +403,8 @@ class AntipodalMeshGraspPlannerTest(absltest.TestCase):
     )
     self.assertEqual(kwargs["workpiece_object"], "box")
     self.assertEqual(kwargs["robot_object"], "ur_module")
+    self.assertEqual(kwargs["pregrasp_distance_m"], 0.12)
+    self.assertEqual(kwargs["gripper"], self.config.gripper.model.parallel_jaw)
 
 
 if __name__ == "__main__":

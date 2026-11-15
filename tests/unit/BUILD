@@ -37,7 +37,9 @@ py_test(
     name = "test_grasp_candidates",
     srcs = ["test_grasp_candidates.py"],
     deps = [
-        "//src/grasping:candidates",
+        "//src/grasping:gripper_model_py_pb2",
+        "//src/grasping:workpiece_mesh",
+        "//src/grasping/planners/antipodal_mesh:candidates",
         "@ai_intrinsic_sdks_pip_deps//numpy",
         "@com_google_absl_py//absl/testing:absltest",
     ],
@@ -46,11 +48,15 @@ py_test(
 py_test(
     name = "test_antipodal_mesh_plan_grasp",
     srcs = ["test_antipodal_mesh_plan_grasp.py"],
+    data = ["//configs:all_configs"],
     deps = [
         "//src/core:config",
-        "//src/hardware:antipodal_mesh_grasp_planner",
-        "//src/skills/antipodal_mesh_plan_grasp",
-        "//src/skills/antipodal_mesh_plan_grasp:antipodal_mesh_plan_grasp_py_pb2",
+        "//src/grasping:gripper_model_py_pb2",
+        "//src/grasping:interface",
+        "//src/grasping:workpiece_mesh",
+        "//src/grasping/planners/antipodal_mesh:adapter",
+        "//src/grasping/planners/antipodal_mesh/skill:antipodal_mesh_plan_grasp",
+        "//src/grasping/planners/antipodal_mesh/skill:antipodal_mesh_plan_grasp_py_pb2",
         "@ai_intrinsic_sdks_pip_deps//numpy",
         "@com_github_grpc_grpc//src/python/grpcio/grpc:grpcio",
         "@com_google_absl_py//absl/testing:absltest",
@@ -59,6 +65,35 @@ py_test(
         "@intrinsic-core//intrinsic_sdk/intrinsic/skills/python:skill_interface",
         "@intrinsic-core//intrinsic_sdk/intrinsic/world/proto:object_world_service_py_pb2",
         "@intrinsic_apis//intrinsic/geometry/proto/v1:inline_geometry_py_pb2",
+    ],
+)
+
+py_test(
+    name = "test_cuboid_center_planner",
+    srcs = ["test_cuboid_center_planner.py"],
+    data = ["//configs:all_configs"],
+    deps = [
+        "//src/core:config",
+        "//src/grasping:interface",
+        "//src/grasping/planners/cuboid_center:adapter",
+        "//src/grasping/planners/cuboid_center:algorithm",
+        "//src/utils:script_utils",
+        "@com_google_absl_py//absl/testing:absltest",
+        "@intrinsic-core//intrinsic_sdk/intrinsic/math/python:data_types",
+        "@intrinsic-core//intrinsic_sdk/intrinsic/solutions:behavior_tree",
+    ],
+)
+
+py_test(
+    name = "test_gripper_model",
+    srcs = ["test_gripper_model.py"],
+    data = [
+        "//configs:all_configs",
+        "@intrinsic-core//intrinsic_control/intrinsic/models/assets/standard_tooling/robotiq_hande",
+    ],
+    deps = [
+        "//src/core:config",
+        "@com_google_absl_py//absl/testing:absltest",
     ],
 )
 
@@ -72,7 +107,9 @@ py_test(
         "//models/raw_stock_2x3x5:raw_stock_2x3x5_filegroup",
     ],
     deps = [
-        "//src/grasping:candidates",
+        "//src/core:config",
+        "//src/grasping:workpiece_mesh",
+        "//src/grasping/planners/antipodal_mesh:candidates",
         "@ai_intrinsic_sdks_pip_deps//numpy",
         "@com_google_absl_py//absl/testing:absltest",
         "@com_google_protobuf//:protobuf_python",
@@ -142,7 +179,8 @@ py_test(
         "//src/core:infeed",
         "//src/core:types",
         "//src/core:workpiece",
-        "//src/hardware:grasping",
+        "//src/grasping:interface",
+        "//src/grasping:registry",
         "//src/hardware:gripper",
         "//src/hardware:machine",
         "//src/hardware:robot",
@@ -214,8 +252,8 @@ py_test(
     name = "test_script_utils",
     srcs = ["test_script_utils.py"],
     deps = [
-        "//src/utils:dynamic_frame_calculator",
         "//src/utils:script_utils",
+        "//src/utils:workpiece_pose",
         "@com_google_absl_py//absl/testing:absltest",
     ],
 )
@@ -341,8 +379,10 @@ py_test(
         "//src:omts_app",
         "//src/core:config",
         "//src/core:types",
-        "//src/hardware:grasp_planners",
-        "//src/hardware:grasping",
+        "//src/grasping:interface",
+        "//src/grasping:registry",
+        "//src/grasping/planners/cuboid_center:adapter",
+        "//src/grasping/planners/moveit:adapter",
         "@ai_intrinsic_sdks_pip_deps//pyyaml",
         "@com_google_absl_py//absl:app",
         "@com_google_absl_py//absl/testing:absltest",
@@ -351,13 +391,14 @@ py_test(
 )
 
 py_test(
-    name = "test_dynamic_frame_calculator",
-    srcs = ["test_dynamic_frame_calculator.py"],
+    name = "test_frame_scripts",
+    srcs = ["test_frame_scripts.py"],
     deps = [
-        "//src/utils:dynamic_frame_calculator",
         "//src/utils:math_utils",
         "//src/utils:random_placement",
+        "//src/utils:regrasp_frames",
         "//src/utils:script_utils",
+        "//src/utils:workpiece_pose",
         "@com_google_absl_py//absl/testing:absltest",
         "@intrinsic-core//intrinsic_sdk/intrinsic/math/python:data_types",
     ],

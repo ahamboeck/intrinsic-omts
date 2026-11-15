@@ -17,6 +17,7 @@ py_library(
     deps = [
         ":world_utils",
         "@intrinsic-core//intrinsic_sdk/intrinsic/solutions:behavior_tree",
+        "@intrinsic-core//intrinsic_sdk/intrinsic/solutions:proto_building",
     ],
 )
 
@@ -29,8 +30,8 @@ py_library(
 )
 
 py_library(
-    name = "dynamic_frame_calculator",
-    srcs = ["dynamic_frame_calculator.py"],
+    name = "workpiece_pose",
+    srcs = ["workpiece_pose.py"],
     deps = [
         "@intrinsic-core//intrinsic_sdk/intrinsic/math/python:data_types",
     ],
@@ -54,14 +55,23 @@ py_library(
 )
 
 py_library(
+    name = "regrasp_frames",
+    srcs = ["regrasp_frames.py"],
+    deps = [
+        "@intrinsic-core//intrinsic_sdk/intrinsic/math/python:data_types",
+    ],
+)
+
+py_library(
     name = "utils",
     srcs = ["__init__.py"],
     deps = [
-        ":dynamic_frame_calculator",
         ":execution_utils",
         ":math_utils",
         ":random_placement",
+        ":regrasp_frames",
         ":script_utils",
+        ":workpiece_pose",
         ":world_utils",
     ],
 )

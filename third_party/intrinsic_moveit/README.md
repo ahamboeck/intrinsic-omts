@@ -113,21 +113,21 @@ flowchart TD
 
 | Path | Role |
 | :--- | :--- |
-| [`moveit_grasp_planner.py`](./moveit_grasp_planner.py) | `MoveItGraspPlannerInterface` (implements the first-party [`GraspPlannerInterface`](../../src/hardware/grasping.py)) and its `MoveItGraspPlanner` / `MockMoveItGraspPlanner` implementations; surface constants. |
+| [`moveit_grasp_planner.py`](./moveit_grasp_planner.py) | `MoveItGraspPlannerInterface` (implements the first-party [`GraspPlannerInterface`](../../src/grasping/interface.py)) and its `MoveItGraspPlanner` / `MockMoveItGraspPlanner` implementations; surface constants. |
 | [`moveit_grasp_planning.py`](./moveit_grasp_planning.py) | `build_moveit_grasp_planning_subtree` — plan a grasp, then approach the resulting pre-grasp. |
 | [`tools/moveit_plan_grasp_and_move.py`](./tools/moveit_plan_grasp_and_move.py) | CLI tool to plan a grasp on target workpiece(s) and move the arm to pre-grasp. |
 | [`tests/`](./tests/) | Offline unit tests for grasp planning subtree and CLI argument parsing. |
 
-This package depends on three first-party targets: `//src/hardware:grasping`
+This package depends on three first-party targets: `//src/grasping:interface`
 (the `GraspPlannerInterface` contract it implements), `//src/hardware:robot`
 (for `RobotInterface` and `UrRobot`), and `//src/behaviors:motions` (for the
 approach move), plus `//src/utils:script_utils` for the settle dwell.
 
 In the other direction, exactly one first-party target reaches in here:
-[`//src/hardware:grasp_planners`](../../src/hardware/grasp_planners.py), the
-factory that maps `GraspPlannerType.MOVEIT` to a `MoveItGraspPlanner`. Nothing
-else first-party imports this package, so `--grasp_planner=cuboid_center` never
-touches any of it.
+[`//src/grasping/planners/moveit:adapter`](../../src/grasping/planners/moveit/adapter.py),
+which registers the `moveit` planner and builds a `MoveItGraspPlanner` from the
+`grasp.moveit` config section. Nothing else first-party imports this package,
+and `--grasp_planner=cuboid_center` never builds a MoveIt planner.
 
 ---
 
@@ -246,26 +246,26 @@ not use MoveIt can omit it entirely:
 ```yaml
 grasp:
   planner: "moveit"
-  moveit_tool_frame_name: "hande_tcp"     # SRDF link, not an Object World frame
-  moveit_group_name: "ur_manipulator"
-  moveit_end_effector_group: "hand"
-  moveit_surfaces: [0, 1, 4, 5]           # see "Why --surfaces=0,1,4,5"; [] means all
-  moveit_num_rotations: 4
-  moveit_retract_dist_m: 0.05             # grasp → pre-grasp separation
-  moveit_timeout_ms: 15000.0
-  moveit_settle_seconds: 0.3              # dwell so the planning scene catches up
+  moveit:
+    tool_frame_name: "hande_tcp"     # SRDF link, not an Object World frame
+    group_name: "ur_manipulator"
+    end_effector_group: "hand"
+    surfaces: [0, 1, 4, 5]           # see "Why --surfaces=0,1,4,5"; [] means all
+    num_rotations: 4
+    retract_dist_m: 0.05             # grasp → pre-grasp separation
+    timeout_ms: 15000.0
+    settle_seconds: 0.3              # dwell so the planning scene catches up
 ```
 
-What changes inside [subtree 1](../../src/behaviors/pick.py): perception still
-captures and runs pose estimation to localize the workpiece, but it is asked for
-`publish_grasp_frames=False`, so it no longer writes the cuboid-center
-`root/grasp` and `root/pre_grasp`. The grasp planning skill writes them instead,
-immediately afterwards. The rest of the cycle — touchdown, retract, grasp,
-attach, lift — is byte-for-byte the same, because it only ever reads those two
-frames.
+What changes inside [subtree 1](../../src/behaviors/pick.py): perception
+captures and runs pose estimation to localize the workpiece, then the grasp
+planning skill writes `root/grasp` and `root/pre_grasp` instead of the default
+cuboid-center planner. MoveIt uses the same `GraspExecution` as cuboid-center,
+so the rest of the cycle (touchdown, retract, grasp, attach, lift) is the
+same, because it only ever reads those two frames.
 
 > [!TIP]
-> `moveit_settle_seconds` exists because perception publishes the workpiece pose
+> `moveit.settle_seconds` exists because perception publishes the workpiece pose
 > to the Object World and the MoveIt planning scene mirrors it asynchronously.
 > Planning immediately after the pose update can therefore plan against the
 > *previous* pose. Raise it if grasps look correct in RViz but land offset on

@@ -515,12 +515,7 @@ class HardwareAdaptersTest(absltest.TestCase):
       config=vision_config,
     )
     task = vision.build_perception_and_spawn_task(
-      approach_offset_z=0.08,
       parent_object="root",
-      pregrasp_frame_name="pre_grasp",
-      grasp_frame_name="grasp",
-      tool_object_name="gripper",
-      tool_frame_name="tool_frame",
       max_tries=3,
     )
     self.assertIsInstance(task, bt.Retry)
@@ -531,24 +526,9 @@ class HardwareAdaptersTest(absltest.TestCase):
     self.assertEqual(
       inner_seq.children[1].name, "2. Estimate 6D Workpiece Poses"
     )
+    # Perception only localizes the workpiece; the grasp planner plans.
     self.assertEqual(
-      inner_seq.children[2].name,
-      "3. Calculate & Update Dynamic Grasp & Pre-Grasp Frames",
-    )
-
-    # With an external grasp planner, step 3 only localizes the workpiece.
-    suppressed = vision.build_perception_and_spawn_task(
-      approach_offset_z=0.08,
-      parent_object="root",
-      pregrasp_frame_name="pre_grasp",
-      grasp_frame_name="grasp",
-      tool_object_name="gripper",
-      tool_frame_name="tool_frame",
-      publish_grasp_frames=False,
-      max_tries=3,
-    )
-    self.assertEqual(
-      suppressed.child.children[2].name, "3. Update Detected Workpiece Pose"
+      inner_seq.children[2].name, "3. Update Detected Workpiece Pose"
     )
 
   def test_orbbec_vision_signature_cleanups(self):
@@ -557,13 +537,12 @@ class HardwareAdaptersTest(absltest.TestCase):
     self.assertNotIn("pose_estimator_id", sig.parameters)
     self.assertNotIn("min_num_instances", sig.parameters)
     self.assertNotIn("min_safe_z", sig.parameters)
-    self.assertIn("tool_object_name", sig.parameters)
-    self.assertIn("tool_frame_name", sig.parameters)
+    # Grasp frames belong to the grasp planner.
+    self.assertNotIn("grasp_frame_name", sig.parameters)
+    self.assertNotIn("approach_offset_z", sig.parameters)
 
-  def test_dynamic_frame_calculator_min_safe_z_and_camera_validation(self):
-    from src.utils.dynamic_frame_calculator import (
-      calculate_and_update_dynamic_frames,
-    )
+  def test_workpiece_pose_min_safe_z_and_camera_validation(self):
+    from src.utils.workpiece_pose import update_detected_workpiece_pose
 
     mock_context = mock.MagicMock()
     mock_context.object_world = mock.MagicMock()
@@ -579,30 +558,25 @@ class HardwareAdaptersTest(absltest.TestCase):
     params.ori_y = 0.0
     params.ori_z = 0.0
     params.ori_w = 1.0
-    params.approach_offset_z = 0.08
-    params.pregrasp_frame_name = "pre_grasp"
-    params.grasp_frame_name = "grasp"
     params.target_scene_object_id = "ai.intrinsic.raw_stock_2x3x5"
-    params.tool_object_name = "gripper"
-    params.tool_frame_name = "tool_frame"
 
     # OMTS threshold (0.95m) rejects 0.6657m
     params.min_safe_z = 0.95
     with self.assertRaisesRegex(
       ValueError, r"Calculated workpiece target Z \(0\.6657m\) is below"
     ):
-      calculate_and_update_dynamic_frames(mock_context, params)
+      update_detected_workpiece_pose(mock_context, params)
 
     # Lab BB-01 threshold (0.60m) accepts 0.6657m
     params.min_safe_z = 0.60
-    calculate_and_update_dynamic_frames(mock_context, params)
+    update_detected_workpiece_pose(mock_context, params)
 
     # Missing camera object raises ValueError directly
     mock_context.object_world.orbbec_camera = None
     with self.assertRaisesRegex(
       ValueError, r"Camera object 'orbbec_camera' not found in world\."
     ):
-      calculate_and_update_dynamic_frames(mock_context, params)
+      update_detected_workpiece_pose(mock_context, params)
 
   def test_resolve_adio_resource_with_strict_resources_container(self):
     from src.utils.math_utils import resolve_adio_resource
@@ -783,23 +757,31 @@ class HardwareAdaptersTest(absltest.TestCase):
     )
     vision = OrbbecVision(solution=mock_solution, config=vision_cfg)
     seq_task = vision.build_perception_and_spawn_task(
-      approach_offset_z=0.08,
       parent_object="root",
-      pregrasp_frame_name="pre_grasp",
-      grasp_frame_name="grasp",
-      tool_object_name="gripper",
-      tool_frame_name="tool_frame",
       max_tries=1,
     )
     # max_tries=1 returns bt.Sequence directly without bt.Retry wrapper
     self.assertIsInstance(seq_task, bt.Sequence)
     self.assertIsNotNone(real_pb.last_parameters)
-    self.assertLen(real_pb.last_parameters.fields, 17)
-    publish_field = real_pb.last_parameters.fields[-1]
-    self.assertEqual(publish_field.name, "publish_grasp_frames")
-    self.assertEqual(publish_field.number, 17)
-    self.assertEqual(publish_field.type, "bool")
-    self.assertTrue(publish_field.arg)
+    self.assertEqual(
+      [field.name for field in real_pb.last_parameters.fields],
+      [
+        "pos_x",
+        "pos_y",
+        "pos_z",
+        "ori_x",
+        "ori_y",
+        "ori_z",
+        "ori_w",
+        "parent_object",
+        "camera_name",
+        "target_scene_object_id",
+        "min_safe_z",
+      ],
+    )
+    min_safe_z_field = real_pb.last_parameters.fields[-1]
+    self.assertEqual(min_safe_z_field.number, 11)
+    self.assertEqual(min_safe_z_field.arg, 0.95)
 
     # Missing resources raise ValueError
     mock_solution.resources = {}

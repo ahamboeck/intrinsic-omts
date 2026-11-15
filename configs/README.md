@@ -19,10 +19,12 @@ and hardware/service configuration manifests (`.textproto`).
   [`src/core/config.py:load_app_config`](../src/core/config.py). Defines robot
   part/frame names, gripper parameters, optional CNC machine DIO pin/joint
   mappings, vision estimator settings, scene frame names, and cycle forces/timeouts.
-  The optional `grasp:` section selects the grasp planning backend
-  (`cuboid_center`, the default when omitted, `moveit`, or the simulation-only
-  `antipodal_mesh`); its `moveit_*` and `antipodal_mesh_*` fields tune those
-  backends and are ignored otherwise.
+  The optional `grasp:` section selects the grasp planner (`cuboid_center`,
+  the default when omitted, `moveit`, or the simulation-only `antipodal_mesh`,
+  which also needs `simulation_only: true`). Each planner reads its own
+  sub-section, such as `grasp.moveit`, which is ignored when another planner
+  is selected. `gripper.model` holds the gripper geometry planners plan with;
+  see [`src/grasping/README.md`](../src/grasping/README.md).
 * **`*.updates.pbtxt`**: `ObjectWorldUpdates` protos defining kinematic tree
   attachments (e.g. mounting `gripper` and `orbbec_camera` to `ur_module/flange`),
   robot base alignment, fixture poses, named scene frames (`view`,

@@ -47,27 +47,6 @@ class InfeedMode(enum.Enum):
   GRID = "grid"
 
 
-class GraspPlannerType(enum.Enum):
-  """Backend that decides where and how the workpiece is grasped.
-
-  All three options supply `grasp` and `pre_grasp` frames. The pick sequence
-  adapts its contact motion to the selected planner.
-
-  Attributes:
-      CUBOID_CENTER: Built-in heuristic. Places the grasp at the centre of the
-        detected workpiece with the gripper aligned to its short side, derived
-        directly from the 6D pose estimate.
-      MOVEIT: Model-based planning through the `intrinsic-moveit` integration.
-        Requires the MoveIt planning service to be running and reachable.
-      ANTIPODAL_MESH: OMTS mesh-based planning through the `antipodal_mesh_plan_grasp` skill,
-        with motion-planner checks for candidate grasps.
-  """
-
-  CUBOID_CENTER = "cuboid_center"
-  MOVEIT = "moveit"
-  ANTIPODAL_MESH = "antipodal_mesh"
-
-
 class SimulationMode(enum.Enum):
   """Execution mode requested from the Flowstate executive.
 

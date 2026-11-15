@@ -284,9 +284,11 @@ bazel run //src:omts_app -- \
 The grasp planner defaults to `cuboid_center`, which derives a top-down grasp
 from the pose estimate and needs no extra services. `--grasp_planner` overrides
 the `grasp.planner` field in `app_config.yaml` for a single run; set that field
-instead to make the choice permanent for a cell. The `grasp.moveit_*` config
-fields (planning group, candidate surfaces, retract distance, timeout) only
-apply to the `moveit` backend.
+instead to make the choice permanent for a cell. The `grasp.moveit` config
+section (planning group, candidate surfaces, retract distance, timeout) only
+applies to the `moveit` planner. See
+[`src/grasping/README.md`](src/grasping/README.md) for all planners and how to
+add one.
 
 ### 5. Testing and developer tools
 

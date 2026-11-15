@@ -23,7 +23,7 @@ from src.behaviors.return_infeed import build_return_to_infeed_subtree
 from src.behaviors.unload_machine import build_unload_machine_subtree
 from src.core.config import AppConfig
 from src.core.infeed import InfeedStrategy
-from src.hardware.grasping import GraspPlannerInterface
+from src.grasping.interface import GraspPlannerInterface
 from src.hardware.gripper import GripperInterface
 from src.hardware.machine import CncMachineInterface
 from src.hardware.robot import Robot
@@ -68,10 +68,9 @@ def build_machine_tending_behavior_tree(
       config: Validated application configuration dataclass.
       num_cycles_override: Optional override for number of cycles to execute
         (1 = single sequence, >1 = finite Loop, <=0 = continuous Loop).
-      grasp_planner: Optional grasp planner for the infeed pick, and for the
-        unload when it plans exact contacts. `None` selects the built-in
-        cuboid-center behaviour, where the perception pipeline publishes the
-        grasp frames itself.
+      grasp_planner: Grasp planner for the infeed pick, and for the unload and
+        return when its `GraspExecution` says so. Without one, the existing
+        grasp frames are used with a touchdown.
       tree_name: Descriptive name for the Behavior Tree.
 
   Returns:

@@ -12,6 +12,13 @@ gripper:
   joint_name: "robotiq_hande_left_finger_joint"
   open_position: 0.025
   close_position: 0.0
+  # Hand-E with OMTS's finger offset patch; tests/unit/test_gripper_model.py
+  # checks these against its SDF.
+  model:
+    parallel_jaw:
+      min_width_m: 0.01
+      max_width_m: 0.06
+      contact_depth_m: 0.022
 
 vision:
   camera_name: "orbbec_camera"

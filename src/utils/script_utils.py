@@ -139,3 +139,52 @@ def create_dwell_task(
     function_body=f"import time\ntime.sleep({float(dwell_time_sec)})\n",
   )
   return bt.Task(action=action, name=name)
+
+
+def create_python_script(
+  solution: Any | None,
+  source: types.ModuleType | Callable[..., Any] | str,
+  fields: list[tuple[str, str, object]],
+  function_name: str | None = None,
+) -> Any:
+  """Builds a `bt.PythonScript` calling `source` with typed parameters.
+
+  Args:
+    solution: Live solution deployment handle, used to build the parameter
+      signature. The signature is left unset without one, or for a mocked
+      solution in unit tests.
+    source: Script source, as accepted by `load_python_script`.
+    fields: `(type, name, value)` per script parameter, such as
+      `("string", "frame_name", "grasp")`.
+    function_name: Entry point in `source`, as for `load_python_script`.
+
+  Returns:
+    The `bt.PythonScript` action.
+  """
+  from unittest import mock  # pylint: disable=g-import-not-at-top
+
+  from intrinsic.solutions import (  # pylint: disable=g-import-not-at-top
+    behavior_tree as bt,
+  )
+  from intrinsic.solutions import (  # pylint: disable=g-import-not-at-top
+    proto_building as pb,
+  )
+
+  signature = None
+  if (
+    solution is not None
+    and hasattr(solution, "proto_builder")
+    and not isinstance(solution.proto_builder, mock.MagicMock)
+  ):
+    signature = solution.proto_builder.create_signature_with_args(
+      parameters=pb.MessageSpec(
+        fields=[
+          pb.FieldSpec(type=type_name, name=name, number=number, arg=arg)
+          for number, (type_name, name, arg) in enumerate(fields, 1)
+        ]
+      )
+    )
+  return bt.PythonScript(
+    signature_with_args=signature,
+    function_body=load_python_script(source, function_name=function_name),
+  )
