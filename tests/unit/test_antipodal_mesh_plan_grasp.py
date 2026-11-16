@@ -18,14 +18,12 @@ import dataclasses
 import types
 from unittest import mock
 
-import grpc
 import numpy as np
 from absl.testing import absltest
 from google.protobuf import json_format
 from intrinsic.geometry.proto.v1 import inline_geometry_pb2
 from intrinsic.math.python import data_types
 from intrinsic.skills.python import skill_interface
-from intrinsic.world.proto import object_world_service_pb2
 
 from src.core.config import load_app_config
 from src.grasping import gripper_model_pb2, workpiece_mesh
@@ -35,155 +33,11 @@ from src.grasping.planners.antipodal_mesh.skill import (
   antipodal_mesh_plan_grasp,
   antipodal_mesh_plan_grasp_pb2,
 )
+from tests.unit import mesh_skill_fakes
 
 _HANDE = gripper_model_pb2.ParallelJawGripper(
   min_width_m=0.01, max_width_m=0.06, contact_depth_m=0.022
 )
-
-# A 40 x 100 x 30 mm box: graspable across x only.
-_BOX_MESH = {
-  "vertices": [
-    c * s
-    for corner in (
-      (-1, -1, -1),
-      (1, -1, -1),
-      (1, 1, -1),
-      (-1, 1, -1),
-      (-1, -1, 1),
-      (1, -1, 1),
-      (1, 1, 1),
-      (-1, 1, 1),
-    )
-    for c, s in zip(corner, (0.02, 0.05, 0.015), strict=True)
-  ],
-  "faces": [
-    *(0, 2, 1, 0, 3, 2),
-    *(4, 5, 6, 4, 6, 7),
-    *(0, 1, 5, 0, 5, 4),
-    *(1, 2, 6, 1, 6, 5),
-    *(2, 3, 7, 2, 7, 6),
-    *(3, 0, 4, 3, 4, 7),
-  ],
-}
-
-
-def _box_object(geometry, link_offset=(0.0, 0.0, 0.0), shape_transform=None):
-  """An Object World object proto whose link entity carries the box mesh."""
-  shape = {"geometry": geometry}
-  if shape_transform:
-    shape["refTShape"] = shape_transform
-  x, y, z = link_offset
-  return json_format.ParseDict(
-    {
-      "name": "box",
-      "rootEntityId": "root_entity",
-      "entities": {
-        "root_entity": {"id": "root_entity"},
-        "link": {
-          "id": "link",
-          "parentId": "root_entity",
-          "parentTThis": {
-            "position": {"x": x, "y": y, "z": z},
-            "orientation": {"w": 1.0},
-          },
-          "geometryComponent": {
-            "namedGeometries": {
-              "Intrinsic_Visual": {"namedGeometries": {"box": shape}}
-            }
-          },
-        },
-      },
-    },
-    object_world_service_pb2.Object(),
-  )
-
-
-_INLINE_BOX = {
-  "inlineGeometryData": {"exactGeometry": {"triangleMesh": _BOX_MESH}}
-}
-
-
-class _World:
-  """Object World stand-in: the box at (0.3, 0.2, 0.7), tool at the origin."""
-
-  def __init__(self):
-    self.root = types.SimpleNamespace(frame_names=["grasp", "pre_grasp"])
-    self.box = types.SimpleNamespace(proto=_box_object(_INLINE_BOX))
-    self.object_pose = data_types.Pose3(translation=[0.3, 0.2, 0.7])
-    self.updates = {}
-    self.created = []
-
-  def get_object(self, name):
-    assert name == "box"
-    return self.box
-
-  def get_frame(self, frame, owner):
-    if owner == "root" and frame not in self.root.frame_names:
-      raise ValueError(f"Missing frame {frame}")
-    return ("frame", owner, frame)
-
-  def get_transform(self, node_a, node_b):
-    del node_a
-    if node_b is self.box:
-      return self.object_pose
-    return data_types.Pose3()
-
-  def update_transform(self, node_a, node_b, a_t_b):
-    del node_a
-    self.updates[node_b[2]] = a_t_b.matrix4x4()
-
-  def create_frame(self, frame_name, parent, parent_t_frame):
-    assert parent is self.root or parent[2] in self.root.frame_names
-    assert frame_name not in self.root.frame_names
-    self.root.frame_names.append(frame_name)
-    self.created.append(frame_name)
-    self.updates[frame_name] = parent_t_frame.matrix4x4()
-
-
-class _PlanningError(grpc.RpcError):
-  def code(self):
-    return grpc.StatusCode.FAILED_PRECONDITION
-
-  def details(self):
-    return "No collision-free Cartesian approach"
-
-
-class _Planner:
-  """Motion planner stand-in that fails IK for the first `ik_failures` calls."""
-
-  def __init__(
-    self, ik_failures=0, collides=False, plan_failures=0, empty_path=False
-  ):
-    self.ik_failures = ik_failures
-    self.collides = collides
-    self.ik_calls = 0
-    self.plan_failures = plan_failures
-    self.empty_path = empty_path
-    self.paths = []
-
-  def compute_ik(self, robot, target, starting_joints=None, options=None):
-    del robot, target, starting_joints
-    assert options.collision_settings.minimum_margin > 0
-    self.ik_calls += 1
-    solved = self.ik_calls > self.ik_failures
-    return types.SimpleNamespace(
-      solutions=[[float(self.ik_calls)] * 6] if solved else []
-    )
-
-  def check_collisions(self, robot, waypoints, options):
-    del robot, options
-    assert len(waypoints) == 2
-    return types.SimpleNamespace(has_collision=self.collides)
-
-  def plan_path(self, robot, specification):
-    self.paths.append((robot, specification))
-    if self.collides or len(self.paths) <= self.plan_failures:
-      raise _PlanningError()
-    return types.SimpleNamespace(
-      path=types.SimpleNamespace(
-        waypoints=[] if self.empty_path else [robot.start_configuration]
-      )
-    )
 
 
 def _execute(
@@ -194,7 +48,7 @@ def _execute(
   pregrasp_frame="pre_grasp",
   gripper=_HANDE,
 ):
-  world = world or _World()
+  world = world or mesh_skill_fakes.World()
   params = antipodal_mesh_plan_grasp_pb2.AntipodalMeshPlanGraspParams(
     workpiece_object="box",
     robot_object="ur_module",
@@ -217,12 +71,12 @@ def _execute(
 class AntipodalMeshPlanGraspSkillTest(absltest.TestCase):
   def test_writes_only_the_grasp_and_pregrasp(self):
     """The behaviours save the part pose for the return, not the planner."""
-    _, world = _execute(_Planner())
+    _, world = _execute(mesh_skill_fakes.Planner())
     self.assertCountEqual(world.updates, ["grasp", "pre_grasp"])
 
   def test_requires_the_gripper_geometry(self):
     with self.assertRaises(skill_interface.InvalidSkillParametersError):
-      _execute(_Planner(), gripper=None)
+      _execute(mesh_skill_fakes.Planner(), gripper=None)
 
   def test_plans_with_the_given_jaw_widths(self):
     # The 40 mm box no longer fits jaws that open to 30 mm.
@@ -230,10 +84,10 @@ class AntipodalMeshPlanGraspSkillTest(absltest.TestCase):
     narrow.CopyFrom(_HANDE)
     narrow.max_width_m = 0.03
     with self.assertRaises(skill_interface.SkillError):
-      _execute(_Planner(), gripper=narrow)
+      _execute(mesh_skill_fakes.Planner(), gripper=narrow)
 
   def test_checks_a_cartesian_linear_approach_from_the_pregrasp(self):
-    planner = _Planner()
+    planner = mesh_skill_fakes.Planner()
     planner.compute_ik = mock.Mock(wraps=planner.compute_ik)
     planner.check_collisions = mock.Mock(wraps=planner.check_collisions)
 
@@ -265,20 +119,20 @@ class AntipodalMeshPlanGraspSkillTest(absltest.TestCase):
     planner.check_collisions.assert_not_called()
 
   def test_skips_an_approach_that_cannot_be_planned(self):
-    result, _ = _execute(_Planner(plan_failures=1))
+    result, _ = _execute(mesh_skill_fakes.Planner(plan_failures=1))
     self.assertEqual(result.num_checked, 2)
 
   def test_rejects_an_empty_approach_path(self):
     with self.assertRaises(skill_interface.SkillError):
-      _execute(_Planner(empty_path=True))
+      _execute(mesh_skill_fakes.Planner(empty_path=True))
 
   def test_unload_frames_preserve_infeed_targets_and_are_reused(self):
-    _, world = _execute(_Planner())
+    _, world = _execute(mesh_skill_fakes.Planner())
     infeed = {name: pose.copy() for name, pose in world.updates.items()}
     for position in ([0.5, -0.2, 0.8], [0.4, -0.1, 0.75]):
       world.object_pose = data_types.Pose3(translation=position)
       _execute(
-        _Planner(),
+        mesh_skill_fakes.Planner(),
         world=world,
         grasp_frame="grasp_unload",
         pregrasp_frame="pre_grasp_unload",
@@ -291,7 +145,7 @@ class AntipodalMeshPlanGraspSkillTest(absltest.TestCase):
     self.assertCountEqual(world.created, ["grasp_unload", "pre_grasp_unload"])
 
   def test_writes_the_first_feasible_candidate(self):
-    result, world = _execute(_Planner())
+    result, world = _execute(mesh_skill_fakes.Planner())
 
     self.assertEqual(result.num_checked, 1)
     self.assertAlmostEqual(result.width_m, 0.04, places=6)
@@ -302,16 +156,16 @@ class AntipodalMeshPlanGraspSkillTest(absltest.TestCase):
 
   def test_skips_candidates_without_an_ik_solution(self):
     # The first candidate's pregrasp IK fails; the second passes.
-    result, world = _execute(_Planner(ik_failures=1))
+    result, world = _execute(mesh_skill_fakes.Planner(ik_failures=1))
 
     self.assertEqual(result.num_checked, 2)
     self.assertIn("grasp", world.updates)
 
   def test_fails_when_every_approach_collides(self):
-    world = _World()
+    world = mesh_skill_fakes.World()
     world.root.frame_names.clear()
     with self.assertRaises(skill_interface.SkillError):
-      _execute(_Planner(collides=True), world=world)
+      _execute(mesh_skill_fakes.Planner(collides=True), world=world)
     self.assertEmpty(world.updates)
     self.assertEmpty(world.created)
 
@@ -320,7 +174,7 @@ class WorkpieceMeshTest(absltest.TestCase):
   def test_reads_a_stored_mesh_in_the_object_frame(self):
     # The mesh is stored in the geometry service, on a link 0.1 m along x,
     # shifted another 0.02 m up within the link.
-    box = _box_object(
+    box = mesh_skill_fakes.box_object(
       {"geoRef": {"exactGeometryRef": "box_mesh"}},
       link_offset=(0.1, 0.0, 0.0),
       shape_transform={"trs": {"translation": {"z": 0.02}}},
@@ -328,7 +182,8 @@ class WorkpieceMeshTest(absltest.TestCase):
     service = mock.Mock()
     service.GetGeometry.return_value = types.SimpleNamespace(
       inline_geometry=json_format.ParseDict(
-        _INLINE_BOX["inlineGeometryData"], inline_geometry_pb2.InlineGeometry()
+        mesh_skill_fakes.INLINE_BOX["inlineGeometryData"],
+        inline_geometry_pb2.InlineGeometry(),
       )
     )
 
@@ -345,7 +200,7 @@ class WorkpieceMeshTest(absltest.TestCase):
     np.testing.assert_allclose(vertices.max(axis=0), [0.12, 0.05, 0.035])
 
   def test_object_without_a_visual_mesh_is_rejected(self):
-    box = _box_object(_INLINE_BOX)
+    box = mesh_skill_fakes.box_object(mesh_skill_fakes.INLINE_BOX)
     del box.entities["link"].geometry_component.named_geometries[
       "Intrinsic_Visual"
     ]

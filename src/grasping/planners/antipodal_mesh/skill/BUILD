@@ -33,11 +33,11 @@ py_library(
     deps = [
         ":antipodal_mesh_plan_grasp_py_pb2",
         "//src/grasping:feasibility",
+        "//src/grasping:frames",
         "//src/grasping:workpiece_mesh",
         "//src/grasping/planners/antipodal_mesh:candidates",
         "@ai_intrinsic_sdks_pip_deps//numpy",
         "@com_google_absl_py//absl/logging",
-        "@intrinsic-core//intrinsic_sdk/intrinsic/math/python:data_types",
         "@intrinsic-core//intrinsic_sdk/intrinsic/motion_planning:motion_planner_client",
         "@intrinsic-core//intrinsic_sdk/intrinsic/skills/python:skill_interface",
         "@intrinsic_apis//intrinsic/skills/proto:footprint_py_pb2",

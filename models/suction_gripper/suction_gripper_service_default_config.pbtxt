@@ -1,0 +1,24 @@
+# The vacuum, blow-off and part-present signals. Core's suction gripper service
+# requires all of them. In simulation, Gazebo's suction plugin provides them; on
+# hardware, `service_instance_name` names the realtime control service that
+# does.
+[type.googleapis.com/intrinsic_proto.gripper_service.SuctionGripperRealtimeControlServiceConfig] {
+  signals {
+    grasp {
+      bool_values { key: "suction_gripper_vacuum" value: true }
+    }
+    release {
+      bool_values { key: "suction_gripper_vacuum" value: false }
+    }
+    blowoff_on {
+      bool_values { key: "suction_gripper_blowoff" value: true }
+    }
+    blowoff_off {
+      bool_values { key: "suction_gripper_blowoff" value: false }
+    }
+    gripping_indicated {
+      bool_values { key: "suction_gripper_part_present" value: true }
+    }
+  }
+  service_instance_name: "icon"
+}

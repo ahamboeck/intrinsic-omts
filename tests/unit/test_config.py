@@ -205,7 +205,8 @@ gripper:
 
   def test_unknown_gripper_type_is_rejected(self):
     with self.assertRaisesRegex(
-      ValueError, r"Unsupported gripper type 'gecko'.*\['dio', 'robotiq'\]"
+      ValueError,
+      r"Unsupported gripper type 'gecko'.*\['dio', 'robotiq', 'suction'\]",
     ):
       GripperConfig(type="gecko")
 

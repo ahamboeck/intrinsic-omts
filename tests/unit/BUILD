@@ -1,5 +1,5 @@
 load("@com_google_protobuf//bazel:py_proto_library.bzl", "py_proto_library")
-load("@intrinsic-core//bazel:python.bzl", "py_test")
+load("@intrinsic-core//bazel:python.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -50,6 +50,7 @@ py_test(
     srcs = ["test_antipodal_mesh_plan_grasp.py"],
     data = ["//configs:all_configs"],
     deps = [
+        ":mesh_skill_fakes",
         "//src/core:config",
         "//src/grasping:gripper_model_py_pb2",
         "//src/grasping:interface",
@@ -89,11 +90,61 @@ py_test(
     srcs = ["test_gripper_model.py"],
     data = [
         "//configs:all_configs",
+        "//models/suction_gripper:suction_gripper.sdf",
         "@intrinsic-core//intrinsic_control/intrinsic/models/assets/standard_tooling/robotiq_hande",
     ],
     deps = [
         "//src/core:config",
         "@com_google_absl_py//absl/testing:absltest",
+    ],
+)
+
+py_library(
+    name = "mesh_skill_fakes",
+    testonly = True,
+    srcs = ["mesh_skill_fakes.py"],
+    deps = [
+        "@com_github_grpc_grpc//src/python/grpcio/grpc:grpcio",
+        "@com_google_protobuf//:protobuf_python",
+        "@intrinsic-core//intrinsic_sdk/intrinsic/math/python:data_types",
+        "@intrinsic-core//intrinsic_sdk/intrinsic/world/proto:object_world_service_py_pb2",
+    ],
+)
+
+py_test(
+    name = "test_suction_mesh_planner",
+    srcs = ["test_suction_mesh_planner.py"],
+    data = ["//configs:all_configs"],
+    deps = [
+        ":mesh_skill_fakes",
+        "//src/core:config",
+        "//src/grasping:gripper_model_py_pb2",
+        "//src/grasping:interface",
+        "//src/grasping:workpiece_mesh",
+        "//src/grasping/planners/suction_mesh:adapter",
+        "//src/grasping/planners/suction_mesh:candidates",
+        "//src/grasping/planners/suction_mesh/skill:suction_mesh_plan_grasp",
+        "//src/grasping/planners/suction_mesh/skill:suction_mesh_plan_grasp_py_pb2",
+        "@ai_intrinsic_sdks_pip_deps//numpy",
+        "@com_google_absl_py//absl/testing:absltest",
+        "@intrinsic-core//intrinsic_sdk/intrinsic/skills/python:skill_interface",
+    ],
+)
+
+py_test(
+    name = "test_suction_gripper",
+    srcs = ["test_suction_gripper.py"],
+    data = ["//configs:all_configs"],
+    deps = [
+        "//src/core:config",
+        "//src/grasping:registry",
+        "//src/hardware:gripper",
+        "//src/skills/control_suction_gripper",
+        "//src/skills/control_suction_gripper:control_suction_gripper_py_pb2",
+        "@com_github_grpc_grpc//src/python/grpcio/grpc:grpcio",
+        "@com_google_absl_py//absl/testing:absltest",
+        "@intrinsic-core//intrinsic_sdk/intrinsic/skills/python:skill_interface",
+        "@intrinsic_apis//intrinsic/hardware/gripper/eoat:eoat_service_py_pb2",
     ],
 )
 
@@ -104,12 +155,14 @@ py_test(
         "//configs:all_configs",
         "//models/banana:banana_filegroup",
         "//models/bracket:bracket_filegroup",
+        "//models/cover_plate:cover_plate_filegroup",
         "//models/raw_stock_2x3x5:raw_stock_2x3x5_filegroup",
     ],
     deps = [
         "//src/core:config",
         "//src/grasping:workpiece_mesh",
         "//src/grasping/planners/antipodal_mesh:candidates",
+        "//src/grasping/planners/suction_mesh:candidates",
         "@ai_intrinsic_sdks_pip_deps//numpy",
         "@com_google_absl_py//absl/testing:absltest",
         "@com_google_protobuf//:protobuf_python",

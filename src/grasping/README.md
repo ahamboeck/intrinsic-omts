@@ -11,11 +11,13 @@ how to use its grasps.
 | [`interface.py`](interface.py) | `GraspPlannerInterface` and `GraspExecution`, the contract between planners and behaviours. |
 | [`registry.py`](registry.py) | `PLANNERS`, which maps `grasp.planner` to a planner, and `create_grasp_planner`. |
 | [`gripper_model.proto`](gripper_model.proto) | Gripper geometry per cell (`gripper.model`), such as a parallel-jaw gripper's widths. |
-| [`workpiece_mesh.py`](workpiece_mesh.py) | Fetches and validates a workpiece's triangle mesh from the Object World. |
+| [`workpiece_mesh.py`](workpiece_mesh.py) | Fetches and validates a workpiece's triangle mesh from the Object World, and casts rays against it. |
+| [`frames.py`](frames.py) | Writes planned frames on `root` from a skill. |
 | [`feasibility.py`](feasibility.py) | Checks a grasp with Core's motion planner: collision-checked IK at the pregrasp, then a collision-checked linear path to the grasp. |
 | [`planners/cuboid_center/`](planners/cuboid_center/) | The default: a top-down grasp at the center of the part's pose, with a touchdown. |
 | [`planners/moveit/`](planners/moveit/) | Registers the [MoveIt integration](../../third_party/intrinsic_moveit/README.md). |
 | [`planners/antipodal_mesh/`](planners/antipodal_mesh/) | Plans on two opposing contacts of the part's mesh. Simulation only. |
+| [`planners/suction_mesh/`](planners/suction_mesh/) | Places a suction cup on a level, flat patch of the part's mesh. Simulation only. |
 
 ## The planner contract
 
@@ -32,7 +34,7 @@ MoveIt. It also sets three class attributes:
   | `replan_at_unload` | Plans a new grasp on the part in the machine instead of touching down at the vise frame. The return then places the part from its pose saved at the pick and the current grip. |
 
 - `gripper_kinds`: the kinds of `gripper.model` it supports, `parallel_jaw` by
-  default.
+  default, or `suction`.
 - `simulation_only`: True until the planner is verified on hardware. Selecting
   it then requires `grasp: {simulation_only: true}` or
   `--grasp_simulation_only`.
@@ -42,6 +44,7 @@ MoveIt. It also sets three class attributes:
 | `cuboid_center` | no | `TOUCHDOWN` | no | no |
 | `moveit` | no | `TOUCHDOWN` | no | no |
 | `antipodal_mesh` | yes | `DIRECT` | yes | yes |
+| `suction_mesh` | no | `DIRECT` | yes | yes |
 
 With `replan_at_unload`, the unload plans into `grasp_unload` and
 `pre_grasp_unload`, so the infeed frames stay for the return. The pick saves
@@ -86,7 +89,8 @@ planner for one run with `--grasp_planner=<name>`.
 
 The Hand-E numbers in both cells' configs are checked against the patched
 Hand-E SDF by `tests/unit/test_gripper_model.py`. Another parallel-jaw gripper
-only needs its own numbers here, not a new planner.
+only needs its own numbers here, not a new planner. A suction gripper sets
+`model: {suction: {cup_diameter_m, contact_depth_m}}` instead.
 
 ## Adding a planner
 
@@ -142,9 +146,73 @@ must be closed and outward facing, with at most 10,000 triangles. Validation
 rejects open edges, inconsistent winding, nonmanifold edges and degenerate
 triangles; duplicated seam vertices are matched by their coordinates.
 
+## The suction mesh planner
+
+`suction_mesh` holds the part with one suction cup from above. The
+[`suction_mesh_plan_grasp`](planners/suction_mesh/skill/) skill:
+
+1. Places the cup on a 4 mm grid over the part
+   ([`candidates.py`](planners/suction_mesh/candidates.py)) and casts vertical
+   rays at the cup's center and around two rings under its lip. A position is
+   kept if every ray hits a face within `max_approach_tilt_deg` (15) of
+   horizontal and the hits differ in height by at most
+   `flatness_tolerance_m` (2 mm), so the cup can seal. Positions closest to the
+   part's center of mass (the volume centroid of the closed mesh, see
+   `workpiece_mesh.center_of_mass`) come first, so the part hangs evenly.
+2. Checks them in that order with [`feasibility.py`](feasibility.py), moving
+   the cup to 4 mm above the surface, since the real grasp touches the part.
+3. Writes the first that passes: the grasp presses the cup `press_depth_m`
+   (1 mm) into the surface, because Gazebo's suction plugin only welds a part
+   that touches the cup when the vacuum turns on.
+
+The pick then moves straight onto the grasp and turns the vacuum on, and the
+unload plans again on the part where it was placed, as for `antipodal_mesh`.
+Turning the vacuum off waits 0.5 s before the arm moves on: a real cup takes a
+moment to let go, and in Gazebo a part still pressed by the cup as the arm
+pulls away can be thrown off the table.
+
+The gripper is [`models/suction_gripper`](../../models/suction_gripper/): a
+hardware device made of the tool's scene object, with its cup link named
+`gripper_collision` for Gazebo's suction plugin, and Core's EOAT gripper
+service configured with a `SuctionGripperRealtimeControlServiceConfig`. In
+simulation, that service drives the plugin through Gazebo's GPIO service. The
+app opens and closes it with the
+[`control_suction_gripper`](../skills/control_suction_gripper/) skill, which
+calls the service's `SuctionGripper` API. Core keeps the config proto
+internal, so `bazel/patches/suction_gripper_service_config_visibility.patch`
+makes it visible.
+
+Only parts with a flat, level patch at least the cup's size can be picked:
+the raw stock's top, the bracket's base and the cover plate work with the
+20 mm cup; the banana is too round and fails with "No spot on banana is level
+and flat enough for a 20 mm suction cup". The `cover_plate` demo part is made
+for suction: at 150 x 100 x 4 mm it is wider than the Hand-E opens and too
+thin for its fingertips to reach under the edge, and its center of mass lies
+in a 40 mm cutout, so the cup goes to the nearest solid spot, 30 mm away.
+The bracket can only be held 39 mm from its center of mass, which the wrist
+sensor reads as about 4 N during the return touchdown; the suction cell
+therefore uses a 10 N return threshold.
+
+To run it, deploy with the suction gripper and use its cell config, which
+selects `suction_mesh` and acknowledges simulation:
+
+```bash
+bazel run //:omts_solution -c opt \
+  --//:setup=lab_bb_01 --//:gripper=suction --//:workpiece="$WORKPIECE" -- \
+  --address=localhost:17080 \
+  --operation_mode=sim
+bazel run //src:omts_app -- \
+  --address=localhost:17080 \
+  --config=configs/lab_bb_01/app_config_suction.yaml \
+  --workpiece="$WORKPIECE"
+```
+
+Register the pose estimator after deploying, as in step 3 below.
+
 ## Demo workpieces (Lab BB-01)
 
-The lab cell runs `raw_stock_2x3x5` (the default), `banana` or `bracket`. The
+The lab cell runs `raw_stock_2x3x5` (the default), `banana`, `bracket` or,
+with the suction gripper, `cover_plate`. The
 demo parts are placed by `configs/lab_bb_01_objects/`. Perception finds the
 part in the image from a text prompt, then fits its mesh, from the scene
 object `ai.intrinsic.$WORKPIECE`, to get the pose. Registering saves the
@@ -155,6 +223,7 @@ prompt and the mesh as the pose estimator
 | :--- | :--- |
 | `banana` | `yellow banana` |
 | `bracket` | `U-shaped metal bracket` |
+| `cover_plate` | `blue metal plate` |
 
 Set both variables once, then run the steps below in the same shell.
 
@@ -202,7 +271,9 @@ Set both variables once, then run the steps below in the same shell.
 
 ## Limits
 
-- Only parallel-jaw grippers have a model, and only the Hand-E is configured.
+- The Hand-E and the simulated suction gripper are the only configured
+  grippers. The suction cup is a rigid cylinder: it does not conform to curved
+  surfaces, and vacuum force and leakage are not modeled.
 - `antipodal_mesh` plans top-down grasps only.
 - Mass, friction and holding force are not modeled. The simulated gripper
   welds the part to a finger when it closes while touching it, and holds

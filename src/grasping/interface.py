@@ -28,6 +28,7 @@ from typing import ClassVar
 from intrinsic.solutions import behavior_tree as bt
 
 PARALLEL_JAW = "parallel_jaw"
+SUCTION = "suction"
 
 
 class Approach(enum.Enum):

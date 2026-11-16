@@ -71,6 +71,7 @@ GRIPPER_TYPES: Mapping[str, GripperType] = {
     kind="parallel_jaw",
     required_fields=("joint_name", "open_position", "close_position"),
   ),
+  "suction": GripperType(kind="suction", required_fields=("resource_name",)),
 }
 
 
@@ -88,6 +89,8 @@ class GripperConfig:
       dio_close_pin: Digital output index to close `DioGripper`.
       dio_device_name: Optional ADIO device resource name for `DioGripper`.
       dio_output_block_name: Digital output block name for `DioGripper`.
+      resource_name: Resource of the EOAT suction gripper for
+        `SuctionGripper`, such as the hardware device instance `'gripper'`.
       model: Gripper geometry that grasp planners plan with, such as the jaw
         widths of a parallel-jaw gripper. Optional for planners that need no
         geometry.
@@ -102,6 +105,7 @@ class GripperConfig:
   dio_close_pin: int | None = None
   dio_device_name: str | None = None
   dio_output_block_name: str | None = None
+  resource_name: str | None = None
   model: gripper_model_pb2.GripperModel | None = None
 
   def __post_init__(self) -> None:

@@ -23,6 +23,7 @@ package omts.grasping;
 message GripperModel {
   oneof kind {
     ParallelJawGripper parallel_jaw = 1;
+    SuctionGripper suction = 2;
   }
 }
 
@@ -35,4 +36,13 @@ message ParallelJawGripper {
   // Distance along the tool frame's +Z from the tool frame to where the finger
   // pads touch the part.
   double contact_depth_m = 3;
+}
+
+// A single suction cup that holds the part by vacuum.
+message SuctionGripper {
+  // Diameter of the cup's sealing lip.
+  double cup_diameter_m = 1;
+  // Distance along the tool frame's +Z from the tool frame to the cup's
+  // sealing lip.
+  double contact_depth_m = 2;
 }

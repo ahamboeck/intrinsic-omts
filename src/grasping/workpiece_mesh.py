@@ -75,6 +75,53 @@ def validate_mesh(vertices, triangles):
   return vertices, triangles
 
 
+def center_of_mass(corners):
+  """Returns the volume centroid of a closed mesh, its center of mass if solid.
+
+  Sums the signed tetrahedra between each triangle and the origin, so it is
+  not biased toward densely meshed regions as the mean of the vertices is.
+
+  Args:
+    corners: (T, 3, 3) corners of closed, outward-facing triangles.
+  """
+  volumes = np.einsum(
+    "ij,ij->i", corners[:, 0], np.cross(corners[:, 1], corners[:, 2])
+  )
+  centroids = corners.sum(axis=1) / 4
+  return (volumes[:, None] * centroids).sum(axis=0) / volumes.sum()
+
+
+def ray_hits(origins, directions, corners):
+  """Returns ray to triangle hit distances, inf where a ray misses.
+
+  Uses the Möller-Trumbore test. Memory grows with rays x triangles, so cast
+  rays in chunks of a few dozen.
+
+  Args:
+    origins: (R, 3) ray origins.
+    directions: (R, 3) unit ray directions.
+    corners: (T, 3, 3) triangle corners, in the same frame as the rays.
+
+  Returns:
+    (R, T) distances along each ray.
+  """
+  edge1 = corners[:, 1] - corners[:, 0]
+  edge2 = corners[:, 2] - corners[:, 0]
+  h = np.cross(directions[:, None, :], edge2[None])
+  det = np.einsum("tk,rtk->rt", edge1, h)
+  with np.errstate(divide="ignore", invalid="ignore"):
+    inv = 1.0 / det
+    s = origins[:, None, :] - corners[None, :, 0]
+    u = np.einsum("rtk,rtk->rt", s, h) * inv
+    q = np.cross(s, edge1[None])
+    v = np.einsum("rk,rtk->rt", directions, q) * inv
+    t = np.einsum("tk,rtk->rt", edge2, q) * inv
+    hit = (
+      (np.abs(det) > 1e-12) & (u >= 0) & (v >= 0) & (u + v <= 1) & (t > 1e-6)
+    )
+  return np.where(hit, t, np.inf)
+
+
 def _matrix(transform):
   """Returns a GeometricTransform as a 4x4 matrix."""
   if transform.HasField("matrix4d"):

@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Every mesh workpiece has grasp candidates on its mesh in its scene pose."""
+"""The demo workpieces have the grasp candidates they are meant to have.
+
+Every part has parallel-jaw candidates on its mesh in its scene pose, and the
+parts meant for the suction gripper have suction candidates.
+"""
 
 import json
 import math
@@ -28,6 +32,7 @@ from intrinsic.world.proto import object_world_updates_pb2
 from src.core.config import load_app_config
 from src.grasping import workpiece_mesh
 from src.grasping.planners.antipodal_mesh import candidates
+from src.grasping.planners.suction_mesh import candidates as suction
 
 # (workpiece, scene updates placing it, its visual mesh)
 _WORKPIECES = (
@@ -46,7 +51,15 @@ _WORKPIECES = (
     "configs/lab_bb_01_objects/bracket.updates.pbtxt",
     "models/bracket/bracket.glb",
   ),
+  (
+    "cover_plate",
+    "configs/lab_bb_01_objects/cover_plate.updates.pbtxt",
+    "models/cover_plate/cover_plate.glb",
+  ),
 )
+
+# Parts the 20 mm cup can hold. The banana is too round for it.
+_SUCTION_WORKPIECES = ("raw_stock_2x3x5", "bracket", "cover_plate")
 
 _INDEX_TYPES = {5121: "<u1", 5123: "<u2", 5125: "<u4"}
 
@@ -115,6 +128,33 @@ class MeshWorkpiecesTest(absltest.TestCase):
           self.assertBetween(
             candidate.width_m, gripper.min_width_m, gripper.max_width_m
           )
+
+  def test_suction_candidates_match_the_parts_meant_for_suction(self):
+    cup = load_app_config(
+      "configs/lab_bb_01/app_config_suction.yaml"
+    ).gripper.model.suction
+    for workpiece, scene_path, mesh_path in _WORKPIECES:
+      with self.subTest(workpiece=workpiece):
+        found = suction.top_down_grasps(
+          *_read_glb(mesh_path), _scene_pose(scene_path, workpiece), cup
+        )
+        if workpiece in _SUCTION_WORKPIECES:
+          self.assertNotEmpty(found)
+        else:
+          self.assertEmpty(found)
+
+  def test_cover_plate_cup_avoids_the_cutout_next_to_the_center(self):
+    cup = load_app_config(
+      "configs/lab_bb_01/app_config_suction.yaml"
+    ).gripper.model.suction
+    (_, scene_path, mesh_path) = _WORKPIECES[-1]
+    world_t_plate = _scene_pose(scene_path, "cover_plate")
+    best = suction.top_down_grasps(*_read_glb(mesh_path), world_t_plate, cup)[0]
+    # The 40 mm cutout is centered on the plate, so the nearest spot where the
+    # whole 20 mm cup is on metal is 30 mm from the center.
+    offset = np.abs(best.grasp[:2, 3] - world_t_plate[:2, 3])
+    self.assertGreaterEqual(offset.max(), 0.02 + cup.cup_diameter_m / 2 - 1e-9)
+    self.assertLess(np.linalg.norm(offset), 0.034)
 
 
 if __name__ == "__main__":

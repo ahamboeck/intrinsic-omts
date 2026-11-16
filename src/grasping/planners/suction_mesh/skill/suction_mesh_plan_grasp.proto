@@ -1,0 +1,69 @@
+// Copyright 2026 Intrinsic Innovation LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package omts.skills;
+
+import "intrinsic/assets/proto/field_metadata.proto";
+import "intrinsic/assets/proto/v1/resolved_dependency.proto";
+import "src/grasping/gripper_model.proto";
+
+// Plans a top-down suction grasp on a workpiece's visual mesh and writes it to
+// two frames on root, creating them if missing. The cup is placed where the
+// surface under it is nearly level and flat enough to seal. Each candidate is
+// checked with the motion planner: collision-checked IK at the pregrasp, then
+// a collision-checked Cartesian-linear plan to just above the surface.
+message SuctionMeshPlanGraspParams {
+  // Object World name of the workpiece. Its current pose and its visual mesh,
+  // which must be closed and outward facing, are used.
+  string workpiece_object = 1;
+  // Object World name of the robot arm.
+  string robot_object = 2;
+  // Moving frame used for the grasp, such as the gripper's tool frame.
+  string tool_object = 3;
+  string tool_frame = 4;
+  // Frames updated with the result, created on `root` if missing.
+  string grasp_frame = 5;
+  string pregrasp_frame = 6;
+  // Height of the pregrasp above the grasp.
+  optional double pregrasp_distance_m = 7;
+  // Largest angle between a face under the cup and the horizontal plane.
+  optional double max_approach_tilt_deg = 8;
+  // Largest height difference of the surface under the cup.
+  optional double flatness_tolerance_m = 9;
+  // How far the grasp presses the cup below the surface.
+  optional double press_depth_m = 10;
+  // Clearance required by the collision checks.
+  optional double collision_margin_m = 11;
+  // Candidates checked with the motion planner before giving up.
+  optional int32 max_checked_candidates = 12;
+  // The motion planner service, resolved by the solution.
+  intrinsic_proto.assets.v1.ResolvedDependency
+      motion_planner_service = 13 [(intrinsic_proto.assets.field_metadata)
+                                       .dependency = {
+    requires: "grpc://intrinsic_proto.motion_planning.v1.MotionPlannerService",
+    skill_annotations: { always_provide_connection_info: true }
+  }];
+  // Geometry of the suction cup, from the cell's `gripper.model`.
+  omts.grasping.SuctionGripper gripper = 14;
+}
+
+message SuctionMeshPlanGraspResult {
+  // Height difference of the surface under the selected cup position.
+  double flatness_m = 1;
+  // Candidates found, and how many were checked before one passed.
+  int32 num_candidates = 2;
+  int32 num_checked = 3;
+}

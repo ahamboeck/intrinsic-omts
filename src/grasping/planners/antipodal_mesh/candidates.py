@@ -25,6 +25,8 @@ import dataclasses
 
 import numpy as np
 
+from src.grasping import workpiece_mesh
+
 
 @dataclasses.dataclass(frozen=True)
 class Candidate:
@@ -39,25 +41,6 @@ class Candidate:
   grasp: np.ndarray
   pregrasp: np.ndarray
   width_m: float
-
-
-def _ray_hits(origins, directions, corners):
-  """Möller-Trumbore distances (rays x triangles); inf where there is no hit."""
-  edge1 = corners[:, 1] - corners[:, 0]
-  edge2 = corners[:, 2] - corners[:, 0]
-  h = np.cross(directions[:, None, :], edge2[None])
-  det = np.einsum("tk,rtk->rt", edge1, h)
-  with np.errstate(divide="ignore", invalid="ignore"):
-    inv = 1.0 / det
-    s = origins[:, None, :] - corners[None, :, 0]
-    u = np.einsum("rtk,rtk->rt", s, h) * inv
-    q = np.cross(s, edge1[None])
-    v = np.einsum("rk,rtk->rt", directions, q) * inv
-    t = np.einsum("tk,rtk->rt", edge2, q) * inv
-    hit = (
-      (np.abs(det) > 1e-12) & (u >= 0) & (v >= 0) & (u + v <= 1) & (t > 1e-6)
-    )
-  return np.where(hit, t, np.inf)
 
 
 def top_down_grasps(
@@ -123,7 +106,9 @@ def top_down_grasps(
   first = np.empty(num_samples, dtype=int)
   width = np.empty(num_samples)
   for i in range(0, num_samples, 64):
-    distances = _ray_hits(points[i : i + 64], inward[i : i + 64], corners)
+    distances = workpiece_mesh.ray_hits(
+      points[i : i + 64], inward[i : i + 64], corners
+    )
     nearest = np.argmin(distances, axis=1)
     first[i : i + 64] = nearest
     width[i : i + 64] = distances[np.arange(len(nearest)), nearest]
@@ -182,5 +167,5 @@ def _closing_path_clear(contact, inward, width, gripper, corners):
   far = contact + inward * width
   starts = np.stack([contact - inward * travel, far + inward * travel])
   directions = np.stack([inward, -inward])
-  hits = _ray_hits(starts, directions, corners).min(axis=1)
+  hits = workpiece_mesh.ray_hits(starts, directions, corners).min(axis=1)
   return bool((hits >= travel - 1e-4).all())

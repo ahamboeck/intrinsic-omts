@@ -27,7 +27,9 @@ bazel test --test_output=errors //tests/unit:test_behaviors
 | `test_cuboid_center_planner` | `src/grasping/planners/cuboid_center/` | Short-side grasp alignment, geodesic $SO(3)$ quaternion selection, `list_frames()` update vs. create branching, and the planner's script parameters. |
 | `test_antipodal_mesh_plan_grasp` | `src/grasping/planners/antipodal_mesh/`, `src/grasping/workpiece_mesh.py`, `src/grasping/feasibility.py` | Mesh grasp skill checks and frame writes, mesh fetching, and the planner adapter. |
 | `test_grasp_candidates`, `test_mesh_workpieces` | `src/grasping/planners/antipodal_mesh/candidates.py`, `src/grasping/workpiece_mesh.py` | Antipodal candidate generation, mesh validation, and grasp candidates on every demo workpiece. |
-| `test_gripper_model` | `configs/*/app_config.yaml` | The cells' Hand-E `gripper.model` matches the patched Hand-E SDF colliders. |
+| `test_gripper_model` | `configs/*/app_config*.yaml` | The cells' Hand-E `gripper.model` matches the patched Hand-E SDF colliders, and the suction cell's matches `models/suction_gripper`. |
+| `test_suction_mesh_planner` | `src/grasping/planners/suction_mesh/` | Suction cup placement on level, flat patches, the skill's checks and frame writes, and the planner adapter. |
+| `test_suction_gripper` | `src/skills/control_suction_gripper/`, `src/hardware/gripper.py`, `configs/lab_bb_01/app_config_suction.yaml` | The suction command skill, the `SuctionGripper` adapter, and the suction cell config and planner selection. |
 | `test_script_utils` | `src/utils/script_utils.py` | Source code extraction for `bt.PythonScript` and `min_safe_z` enforcement. |
 | `test_execution_utils` | `src/utils/execution_utils.py` | Mapping between `SimulationMode` and `Executive.SimulationMode`. |
 | `test_world_configs` | `configs/**/*.pbtxt`, `configs/**/*.textproto` | Protobuf syntax and schema validation for all cell `.pbtxt` world update files, calibration waypoints, and `.textproto` service configs/manifests. |

@@ -5,7 +5,10 @@ package(default_visibility = ["//visibility:public"])
 py_library(
     name = "candidates",
     srcs = ["candidates.py"],
-    deps = ["@ai_intrinsic_sdks_pip_deps//numpy"],
+    deps = [
+        "//src/grasping:workpiece_mesh",
+        "@ai_intrinsic_sdks_pip_deps//numpy",
+    ],
 )
 
 py_library(

@@ -13,7 +13,8 @@ the machine tending cycle via `solution.executive.run(tree)`.
 | [`core/`](core/) | Domain models (`Workpiece`, `Tray`, `WorkcellState`), enums (`SimulationMode`, `InfeedMode`), infeed strategies, and strict YAML configuration schema (`AppConfig`). |
 | [`behaviors/`](behaviors/) | Composable Behavior Tree subtrees (`pick`, `load_machine`, `machining`, `unload_machine`, `return_infeed`), reusable motion primitives, and master cycle builder (`machine_tending_bt.py`). |
 | [`hardware/`](hardware/) | Stateless hardware adapters wrapping SBL skills (`Robot`, `RobotiqGripper`, `DioGripper`, `DioCncMachine`, `OrbbecVision`). |
-| [`grasping/`](grasping/) | Grasp planning: the `GraspPlannerInterface` contract, the planner registry, shared mesh and feasibility helpers, and the `cuboid_center`, `moveit` and simulation-only `antipodal_mesh` planners with their skills. |
+| [`grasping/`](grasping/) | Grasp planning: the `GraspPlannerInterface` contract, the planner registry, shared mesh and feasibility helpers, and the `cuboid_center`, `moveit` and simulation-only `antipodal_mesh` and `suction_mesh` planners with their skills. |
+| [`skills/`](skills/) | OMTS's own hardware skills: `control_suction_gripper` turns an EOAT suction gripper's vacuum on and off. |
 | [`utils/`](utils/) | Runtime helpers: AST script loader (`load_python_script`), behavior tree scripts that update the workpiece pose and return frames, kinematics/world utilities, and execution mode mapping. |
 
 ## Running the Application

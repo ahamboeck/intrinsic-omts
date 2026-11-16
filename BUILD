@@ -36,14 +36,51 @@ string_flag(
         "raw_stock_2x3x5",
         "banana",
         "bracket",
+        "cover_plate",
     ],
 )
+
+# Flag to swap the Hand-E for the single-cup suction gripper. Only Lab BB-01
+# is wired for it.
+string_flag(
+    name = "gripper",
+    build_setting_default = "hande",
+    values = [
+        "hande",
+        "suction",
+    ],
+)
+
+config_setting(
+    name = "is_hande_gripper",
+    flag_values = {
+        ":gripper": "hande",
+    },
+)
+
+config_setting(
+    name = "is_lab_suction",
+    flag_values = {
+        ":setup": "lab_bb_01",
+        ":gripper": "suction",
+    },
+)
+
+_GRIPPER_FLAG_ERROR = "--//:gripper=suction is only wired for --//:setup=lab_bb_01."
 
 config_setting(
     name = "is_lab_banana",
     flag_values = {
         ":setup": "lab_bb_01",
         ":workpiece": "banana",
+    },
+)
+
+config_setting(
+    name = "is_lab_cover_plate",
+    flag_values = {
+        ":setup": "lab_bb_01",
+        ":workpiece": "cover_plate",
     },
 )
 
@@ -59,6 +96,8 @@ _OMTS_SKILL_ASSETS = [
     ":hand_e_gripper_cmd_skill_asset",
     ":moveit_plan_grasp_skill_asset",
     "//src/grasping/planners/antipodal_mesh/skill:antipodal_mesh_plan_grasp_skill",
+    "//src/grasping/planners/suction_mesh/skill:suction_mesh_plan_grasp_skill",
+    "//src/skills/control_suction_gripper:control_suction_gripper_skill",
     "@intrinsic-core//intrinsic_control/intrinsic/icon/skills:dio_read_input_skill",
     "@intrinsic-core//intrinsic_control/intrinsic/icon/skills:dio_set_output_skill",
     "@intrinsic-core//intrinsic_perception/intrinsic/perception/skills:capture_images_skill",
@@ -94,12 +133,18 @@ intrinsic_solution(
         "@intrinsic-core//intrinsic_perception/intrinsic/perception/service/nvidia_pose_estimator:nvidia_pose_estimator_service_asset",
         "@intrinsic-core//intrinsic_perception/intrinsic/perception/service/ioc_train_service:ioc_train_service_asset",
         ":flowstate_ros_bridge_asset",
-        ":hand_e_gripper_service_asset",
         ":orbbec_gemini_driver_asset",
         "//models/raw_stock_2x3x5",
-    ] + select({
+    ] + select(
+        {
+            ":is_lab_suction": ["//models/suction_gripper"],
+            ":is_hande_gripper": [":hand_e_gripper_service_asset"],
+        },
+        no_match_error = _GRIPPER_FLAG_ERROR,
+    ) + select({
         ":is_lab_banana": ["//models/banana"],
         ":is_lab_bracket": ["//models/bracket"],
+        ":is_lab_cover_plate": ["//models/cover_plate"],
         "//conditions:default": [],
     }) + select({
         ":is_lab_bb_01": [
@@ -117,7 +162,6 @@ intrinsic_solution(
     default_operation_mode = "real",
     instances = [
         ":enclosure",
-        ":robotiq_pinch_gripper",
         ":gazebo_simulator",
         ":charuco_9x12_30mm_22mm_dict_5x5",
         ":charuco_9x14_20mm_15mm_dict_5x5",
@@ -130,10 +174,19 @@ intrinsic_solution(
         ":nvidia_pose_estimator_service",
         ":train_service",
         ":flowstate_ros_bridge",
-        ":hand_e_gripper_service",
-    ] + select({
+    ] + select(
+        {
+            ":is_lab_suction": [":suction_gripper"],
+            ":is_hande_gripper": [
+                ":robotiq_pinch_gripper",
+                ":hand_e_gripper_service",
+            ],
+        },
+        no_match_error = _GRIPPER_FLAG_ERROR,
+    ) + select({
         ":is_lab_banana": [":banana"],
         ":is_lab_bracket": [":bracket"],
+        ":is_lab_cover_plate": [":cover_plate"],
         "//conditions:default": [":raw_stock_2x3x5"],
     }) + select({
         ":is_lab_bb_01": [
@@ -144,23 +197,32 @@ intrinsic_solution(
             ":schunk_egp_64nnb",
         ],
     }),
+    # The gripper's attachment to the arm comes first, as it did before the
+    # gripper flag.
     object_world_updates = select({
+        ":is_lab_suction": ["//configs:lab_bb_01/suction_gripper.attachments.updates.pbtxt"],
+        ":is_lab_bb_01": ["//configs:lab_bb_01/ur_module.attachments.updates.pbtxt"],
+        "//conditions:default": [],
+    }) + select({
         ":is_lab_banana": [
-            "//configs:lab_bb_01/ur_module.attachments.updates.pbtxt",
             "//configs:lab_bb_01_objects/waypoints.updates.pbtxt",
             "//configs:lab_bb_01_objects/banana.updates.pbtxt",
             "//configs:lab_bb_01/align_robot.updates.pbtxt",
             "//configs:lab_bb_01/orbbec_gemini.updates.pbtxt",
         ],
         ":is_lab_bracket": [
-            "//configs:lab_bb_01/ur_module.attachments.updates.pbtxt",
             "//configs:lab_bb_01_objects/waypoints.updates.pbtxt",
             "//configs:lab_bb_01_objects/bracket.updates.pbtxt",
             "//configs:lab_bb_01/align_robot.updates.pbtxt",
             "//configs:lab_bb_01/orbbec_gemini.updates.pbtxt",
         ],
+        ":is_lab_cover_plate": [
+            "//configs:lab_bb_01_objects/waypoints.updates.pbtxt",
+            "//configs:lab_bb_01_objects/cover_plate.updates.pbtxt",
+            "//configs:lab_bb_01/align_robot.updates.pbtxt",
+            "//configs:lab_bb_01/orbbec_gemini.updates.pbtxt",
+        ],
         ":is_lab_bb_01": [
-            "//configs:lab_bb_01/ur_module.attachments.updates.pbtxt",
             "//configs:lab_bb_01/scene.updates.pbtxt",
             "//configs:lab_bb_01/align_robot.updates.pbtxt",
             "//configs:lab_bb_01/orbbec_gemini.updates.pbtxt",
@@ -215,6 +277,12 @@ intrinsic_asset_instance(
 )
 
 intrinsic_asset_instance(
+    name = "suction_gripper",
+    asset = "ai.intrinsic.suction_gripper",
+    instance_name = "gripper",
+)
+
+intrinsic_asset_instance(
     name = "raw_stock_2x3x5",
     asset = "ai.intrinsic.raw_stock_2x3x5",
 )
@@ -222,6 +290,11 @@ intrinsic_asset_instance(
 intrinsic_asset_instance(
     name = "banana",
     asset = "ai.intrinsic.banana",
+)
+
+intrinsic_asset_instance(
+    name = "cover_plate",
+    asset = "ai.intrinsic.cover_plate",
 )
 
 intrinsic_asset_instance(

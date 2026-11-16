@@ -16,13 +16,12 @@
 
 import numpy as np
 from absl import logging
-from intrinsic.math.python import data_types
 from intrinsic.motion_planning import motion_planner_client
 from intrinsic.skills.proto import footprint_pb2
 from intrinsic.skills.python import skill_interface
 from intrinsic.world.proto import collision_settings_pb2
 
-from src.grasping import feasibility, workpiece_mesh
+from src.grasping import feasibility, frames, workpiece_mesh
 from src.grasping.planners.antipodal_mesh import candidates
 from src.grasping.planners.antipodal_mesh.skill import (
   antipodal_mesh_plan_grasp_pb2,
@@ -96,21 +95,13 @@ class AntipodalMeshPlanGrasp(skill_interface.Skill):
         settings,
       ):
         continue
-      for frame, pose in (
-        (params.grasp_frame, candidate.grasp),
-        (params.pregrasp_frame, candidate.pregrasp),
-      ):
-        transform = data_types.Pose3.from_matrix4x4(pose)
-        if frame in root.frame_names:
-          world.update_transform(
-            node_a=root,
-            node_b=world.get_frame(frame, "root"),
-            a_t_b=transform,
-          )
-        else:
-          world.create_frame(
-            frame_name=frame, parent=root, parent_t_frame=transform
-          )
+      frames.set_root_frames(
+        world,
+        {
+          params.grasp_frame: candidate.grasp,
+          params.pregrasp_frame: candidate.pregrasp,
+        },
+      )
       logging.info(
         "Selected mesh grasp %d of %d (width %.4f m).",
         index,

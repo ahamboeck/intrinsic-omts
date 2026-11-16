@@ -1,0 +1,36 @@
+# proto-file: intrinsic/skills/proto/skill_manifest.proto
+# proto-message: intrinsic_proto.skills.SkillManifest
+
+id {
+  package: "ai.intrinsic"
+  name: "control_suction_gripper"
+}
+display_name: "Control suction gripper"
+vendor {
+  display_name: "OMTS"
+}
+documentation {
+  description: "Turns the vacuum of an EOAT suction gripper on or off."
+}
+options {
+  python_config {
+    skill_module: "src.skills.control_suction_gripper.control_suction_gripper"
+    proto_module: "src.skills.control_suction_gripper.control_suction_gripper_pb2"
+    create_skill: "src.skills.control_suction_gripper.control_suction_gripper.ControlSuctionGripper"
+  }
+}
+parameter {
+  message_full_name: "omts.skills.SuctionGripperCommand"
+}
+status_info: [
+  {
+    code: 10200
+    title: "Skill Parameterization Error"
+    recovery_instructions: "Check and fix skill input parameters."
+  },
+  {
+    code: 10300
+    title: "Gripper Service Error"
+    recovery_instructions: "Check the suction gripper service status."
+  }
+]

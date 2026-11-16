@@ -34,6 +34,7 @@ py_library(
         "//src/grasping/planners/antipodal_mesh:adapter",
         "//src/grasping/planners/cuboid_center:adapter",
         "//src/grasping/planners/moveit:adapter",
+        "//src/grasping/planners/suction_mesh:adapter",
     ],
 )
 
@@ -45,6 +46,14 @@ py_library(
         "@intrinsic-core//intrinsic_sdk/intrinsic/geometry/proto:geometry_service_py_pb2",
         "@intrinsic-core//intrinsic_sdk/intrinsic/math/python:data_types",
         "@intrinsic-core//intrinsic_sdk/intrinsic/math/python:proto_conversion",
+    ],
+)
+
+py_library(
+    name = "frames",
+    srcs = ["frames.py"],
+    deps = [
+        "@intrinsic-core//intrinsic_sdk/intrinsic/math/python:data_types",
     ],
 )
 

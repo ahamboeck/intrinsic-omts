@@ -1,0 +1,64 @@
+# Lab BB-01 Machine Tending Cell Configuration, with the suction gripper.
+# Deploy with --//:setup=lab_bb_01 --//:gripper=suction. Simulation only.
+cell_name: "lab_bb_01"
+
+robot:
+  arm_part_name: "ur_module"
+  tool_object_name: "gripper"
+  tool_frame_name: "tool_frame"
+  enclosure_object_name: "enclosure"
+
+gripper:
+  type: "suction"
+  resource_name: "gripper"
+  # The 20 mm cup of models/suction_gripper; tests/unit/test_gripper_model.py
+  # checks these against its SDF. The tool frame is at the cup's lip.
+  model:
+    suction:
+      cup_diameter_m: 0.02
+      contact_depth_m: 0.0
+
+vision:
+  camera_name: "orbbec_camera"
+  perception_service_name: "nvidia_pose_estimator_service"
+  pose_estimator_id: "ai.intrinsic.raw_stock_2x3x5_estimator_text"
+  scene_object_id: "ai.intrinsic.raw_stock_2x3x5"
+  sensor_ids: [1, 4]
+  min_num_instances: 1
+  infeed_mode: "perception"
+  min_safe_z: 0.60
+
+frames:
+  parent_object: "root"
+  view_frame: "view"
+  pregrasp_frame: "pre_grasp"
+  grasp_frame: "grasp"
+  machine_approach_frame: "machine_approach"
+  preplace_vise_frame: "pre_place_vise"
+  place_vise_frame: "place_vise"
+
+grasp:
+  planner: "suction_mesh"
+  simulation_only: true
+
+cycle:
+  num_cycles: 1
+  workpiece_id: "raw_stock_2x3x5"
+  approach_offset_z: 0.12
+  standoff_distance_meters: 0.05
+  retract_distance_meters: 0.015
+  pick_touchdown_force_newtons: 15.0
+  load_seat_force_newtons: 8.0
+  unload_touchdown_force_newtons: 15.0
+  # Suction can hold a part far off its centroid (39 mm for the bracket), and
+  # the hanging part then reads as about 4 N of contact on the wrist sensor
+  # during the slow return touchdown, so 5 N stops it in mid-air.
+  return_touchdown_force_newtons: 10.0
+  touchdown_timeout_seconds: 20.0
+  machining_timeout_seconds: 30.0
+  return_shift:
+    center_x: 0.25
+    center_y: 0.25
+    bounds_x: 0.04
+    bounds_y: 0.04
+    bounds_rz_degrees: 20.0

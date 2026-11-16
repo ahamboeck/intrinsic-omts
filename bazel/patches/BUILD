@@ -5,5 +5,6 @@ exports_files([
     "gloop.patch",
     "llvm_header_search_paths.patch",
     "robotiq_hande_finger_offset.patch",
+    "suction_gripper_service_config_visibility.patch",
     "toybox_dynamic_link.patch",
 ])

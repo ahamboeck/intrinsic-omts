@@ -28,6 +28,7 @@ from src.grasping.interface import GraspPlannerInterface, NoSettings
 from src.grasping.planners.antipodal_mesh import adapter as antipodal_mesh
 from src.grasping.planners.cuboid_center import adapter as cuboid_center
 from src.grasping.planners.moveit import adapter as moveit
+from src.grasping.planners.suction_mesh import adapter as suction_mesh
 
 
 @dataclasses.dataclass(frozen=True)
@@ -51,6 +52,9 @@ PLANNERS: Mapping[str, PlannerEntry] = {
   ),
   "cuboid_center": PlannerEntry(cuboid_center.create),
   "moveit": PlannerEntry(moveit.create, moveit.MoveItSettings),
+  "suction_mesh": PlannerEntry(
+    suction_mesh.create, suction_mesh.SuctionMeshSettings
+  ),
 }
 
 

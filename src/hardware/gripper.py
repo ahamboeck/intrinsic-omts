@@ -22,6 +22,7 @@ from intrinsic.solutions import behavior_tree as bt
 
 from src.core.config import GripperConfig
 from src.utils.math_utils import resolve_adio_resource
+from src.utils.script_utils import create_dwell_task
 
 
 class GripperInterface(abc.ABC):
@@ -184,11 +185,78 @@ class RobotiqGripper(GripperInterface):
     return bt.Task(action=action, name=task_name)
 
 
+class SuctionGripper(GripperInterface):
+  """EOAT suction gripper controlled via `control_suction_gripper`.
+
+  Closing turns the vacuum on and opening turns it off. In simulation, a part
+  touching the cup when the vacuum turns on is welded to it.
+
+  Opening waits `RELEASE_SECONDS` before the arm may move: a real cup takes a
+  moment to lose its vacuum, and in simulation a part still pressed by the cup
+  when the arm pulls away can be thrown off the table.
+  """
+
+  RELEASE_SECONDS = 0.5
+
+  def __init__(
+    self,
+    solution: Any,
+    config: GripperConfig,
+  ) -> None:
+    """Initializes the suction gripper adapter from GripperConfig.
+
+    Args:
+        solution: Connected SBL deployment instance.
+        config: Scoped GripperConfig naming the suction gripper resource.
+
+    Raises:
+        ValueError: If `resource_name` is missing from `config`, or the
+          resource is not in the solution.
+    """
+    if config.resource_name is None:
+      raise ValueError(
+        "SuctionGripper requires resource_name in GripperConfig."
+      )
+    try:
+      self._resource = solution.resources[config.resource_name]
+    except (KeyError, AttributeError) as exc:
+      raise ValueError(
+        f"Suction gripper resource '{config.resource_name}' not found in "
+        "solution resources."
+      ) from exc
+    self._skill = solution.skills.ai.intrinsic.control_suction_gripper
+
+  def _build_task(self, command: str, name: str) -> bt.Node:
+    request = getattr(self._skill.intrinsic_proto.eoat, command)()
+    key = "grasp" if command == "GraspRequest" else "release"
+    action = self._skill(suction_gripper=self._resource, **{key: request})
+    return bt.Task(action=action, name=name)
+
+  def build_open_task(self, name: str | None = None) -> bt.Node:
+    """Builds a behavior tree task turning the vacuum off and letting go."""
+    task_name = name or "Suction Off"
+    return bt.Sequence(
+      name=task_name,
+      children=[
+        self._build_task("ReleaseRequest", f"{task_name}: Vacuum Off"),
+        create_dwell_task(
+          self.RELEASE_SECONDS,
+          task_name=f"{task_name}: Wait for Release ({self.RELEASE_SECONDS}s)",
+        ),
+      ],
+    )
+
+  def build_close_task(self, name: str | None = None) -> bt.Node:
+    """Builds a behavior tree task turning the vacuum on."""
+    return self._build_task("GraspRequest", name or "Suction On")
+
+
 # The adapter of each `gripper.type`. The cell config lists the same types,
 # with their model kind and required fields, in `src.core.config.GRIPPER_TYPES`.
 GRIPPERS: Mapping[str, type[GripperInterface]] = {
   "dio": DioGripper,
   "robotiq": RobotiqGripper,
+  "suction": SuctionGripper,
 }
 
 

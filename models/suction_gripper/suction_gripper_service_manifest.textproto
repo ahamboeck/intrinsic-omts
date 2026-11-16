@@ -1,0 +1,32 @@
+metadata {
+  id {
+    package: "ai.intrinsic"
+    name: "suction_gripper_service"
+  }
+  vendor {
+    display_name: "OMTS simulation"
+  }
+  documentation {
+    description: "EOAT suction gripper service for the single-cup vacuum gripper."
+  }
+  display_name: "Suction Gripper Service"
+  asset_tag: ASSET_TAG_GRIPPER
+}
+service_def {
+  service_proto_prefixes: "/intrinsic_proto.eoat.SuctionGripper/"
+  service_proto_prefixes: "/intrinsic_proto.gpio.v1.GPIOService/"
+  service_proto_prefixes: "/intrinsic_proto.services.v1.ServiceState/"
+  service_state_config {
+    service_versions: INTRINSIC_PROTO_SERVICES_V1_SERVICE_STATE
+  }
+  real_spec {
+    image {
+      archive_filename: "gripper-service-image.tar"
+    }
+  }
+  sim_spec {
+    image {
+      archive_filename: "gripper-service-image.tar"
+    }
+  }
+}

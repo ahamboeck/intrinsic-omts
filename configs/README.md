@@ -25,6 +25,8 @@ and hardware/service configuration manifests (`.textproto`).
   sub-section, such as `grasp.moveit`, which is ignored when another planner
   is selected. `gripper.model` holds the gripper geometry planners plan with;
   see [`src/grasping/README.md`](../src/grasping/README.md).
+  `lab_bb_01/app_config_suction.yaml` is the Lab BB-01 cell with the suction
+  gripper (`--//:gripper=suction`) and the `suction_mesh` planner.
 * **`*.updates.pbtxt`**: `ObjectWorldUpdates` protos defining kinematic tree
   attachments (e.g. mounting `gripper` and `orbbec_camera` to `ur_module/flange`),
   robot base alignment, fixture poses, named scene frames (`view`,

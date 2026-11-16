@@ -26,6 +26,7 @@ git_override(
     patch_strip = 1,
     patches = [
         "//bazel/patches:robotiq_hande_finger_offset.patch",
+        "//bazel/patches:suction_gripper_service_config_visibility.patch",
     ],
     remote = "https://github.com/intrinsic-ai/intrinsic-core.git",
 )

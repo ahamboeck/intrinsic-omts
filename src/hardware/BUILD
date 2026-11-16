@@ -28,6 +28,7 @@ py_library(
     deps = [
         "//src/core:config",
         "//src/utils:math_utils",
+        "//src/utils:script_utils",
         "@intrinsic-core//intrinsic_sdk/intrinsic/solutions:behavior_tree",
     ],
 )

@@ -1275,10 +1275,11 @@ def _parse_build_solution_instances(
     )
   sol_body = sol_match.group(1)
 
-  # The first select swaps the lab_bb_01 workpiece; its default applies to
+  # The first select swaps the gripper, and both cells use the Hand-E by
+  # default. The second swaps the lab_bb_01 workpiece; its default applies to
   # both cells.
   inst_block_match = re.search(
-    r"instances\s*=\s*\[(.*?)\]\s*\+\s*select\(\{[^)]*?\"//conditions:default\"\s*:\s*\[(.*?)\]\s*,?\s*\}\)\s*\+\s*select\(\{\s*\":is_lab_bb_01\"\s*:\s*\[(.*?)\]\s*,\s*\"//conditions:default\"\s*:\s*\[(.*?)\]",
+    r"instances\s*=\s*\[(.*?)\]\s*\+\s*select\(\s*\{[^}]*?\":is_hande_gripper\"\s*:\s*\[(.*?)\]\s*,?\s*\}.*?\)\s*\+\s*select\(\{[^)]*?\"//conditions:default\"\s*:\s*\[(.*?)\]\s*,?\s*\}\)\s*\+\s*select\(\{\s*\":is_lab_bb_01\"\s*:\s*\[(.*?)\]\s*,\s*\"//conditions:default\"\s*:\s*\[(.*?)\]",
     sol_body,
     flags=re.DOTALL,
   )
@@ -1299,9 +1300,10 @@ def _parse_build_solution_instances(
     ["root"]
     + _extract_names(inst_block_match.group(1))
     + _extract_names(inst_block_match.group(2))
+    + _extract_names(inst_block_match.group(3))
   )
-  lab_extra = _extract_names(inst_block_match.group(3))
-  omts_extra = _extract_names(inst_block_match.group(4))
+  lab_extra = _extract_names(inst_block_match.group(4))
+  omts_extra = _extract_names(inst_block_match.group(5))
 
   return {
     "omts": tuple(common + omts_extra),

@@ -216,5 +216,26 @@ class ValidateMeshTest(absltest.TestCase):
       workpiece_mesh.validate_mesh(vertices, triangles[:, ::-1])
 
 
+class CenterOfMassTest(absltest.TestCase):
+  def test_weights_by_volume_not_by_vertex(self):
+    # A 2 x 1 x 1 box and a separate 1 x 1 x 1 box have the same number of
+    # vertices, but the larger one holds two thirds of the volume.
+    vertices, triangles = _boxes(((0, 0, 0), (2, 1, 1)), ((3, 0, 0), (1, 1, 1)))
+    corners = vertices[triangles]
+    np.testing.assert_allclose(
+      workpiece_mesh.center_of_mass(corners),
+      [(2 / 3) * 1.0 + (1 / 3) * 3.5, 0.5, 0.5],
+    )
+    self.assertNotAlmostEqual(vertices.mean(axis=0)[0], 2 / 3 + 3.5 / 3)
+
+  def test_does_not_depend_on_the_origin(self):
+    vertices, triangles = _centered_box((0.1, 0.2, 0.3))
+    np.testing.assert_allclose(
+      workpiece_mesh.center_of_mass((vertices + [5, -7, 2])[triangles]),
+      [5, -7, 2],
+      atol=1e-9,
+    )
+
+
 if __name__ == "__main__":
   absltest.main()

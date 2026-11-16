@@ -1,0 +1,28 @@
+metadata {
+  id {
+    package: "ai.intrinsic"
+    name: "suction_gripper"
+  }
+  vendor {
+    display_name: "OMTS simulation"
+  }
+  documentation {
+    description: "Single-cup vacuum gripper with a 20 mm cup, for simulation."
+  }
+  display_name: "Suction Gripper"
+  asset_tags: ASSET_TAG_GRIPPER
+}
+graph {
+  nodes {
+    key: "scene_object"
+    value {
+      asset: "ai.intrinsic.suction_gripper_scene_object"
+    }
+  }
+  nodes {
+    key: "service"
+    value {
+      asset: "ai.intrinsic.suction_gripper_service"
+    }
+  }
+}
