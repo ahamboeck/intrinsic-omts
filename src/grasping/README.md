@@ -171,8 +171,10 @@ Turning the vacuum off waits 0.5 s before the arm moves on: a real cup takes a
 moment to let go, and in Gazebo a part still pressed by the cup as the arm
 pulls away can be thrown off the table.
 
-The gripper is [`models/suction_gripper`](../../models/suction_gripper/): a
-hardware device made of the tool's scene object, with its cup link named
+The gripper is the Robotiq EPick with one 40 mm cup,
+[`models/robotiq_epick`](../../models/robotiq_epick/), built from simple shapes
+with the dimensions and mass in Robotiq's EPick manual. It is a hardware
+device made of the tool's scene object, with its cup link named
 `gripper_collision` for Gazebo's suction plugin, and Core's EOAT gripper
 service configured with a `SuctionGripperRealtimeControlServiceConfig`. In
 simulation, that service drives the plugin through Gazebo's GPIO service. The
@@ -183,27 +185,29 @@ internal, so `bazel/patches/suction_gripper_service_config_visibility.patch`
 makes it visible.
 
 Only parts with a flat, level patch at least the cup's size can be picked:
-the raw stock's top, the bracket's base and the cover plate work with the
-20 mm cup; the banana is too round and fails with "No spot on banana is level
-and flat enough for a 20 mm suction cup". The `cover_plate` demo part is made
+the raw stock's top and the cover plate work with the 40 mm cup. The banana
+is too round and the bracket's flat faces are narrower than the cup, so both
+fail before any motion with "No spot on <part> is level and flat enough for a
+40 mm suction cup". The `cover_plate` demo part is made
 for suction: at 150 x 100 x 4 mm it is wider than the Hand-E opens and too
 thin for its fingertips to reach under the edge, and its center of mass lies
-in a 40 mm cutout, so the cup goes to the nearest solid spot, 30 mm away.
-The bracket can only be held 39 mm from its center of mass, which the wrist
-sensor reads as about 4 N during the return touchdown; the suction cell
-therefore uses a 10 N return threshold.
+in a 40 mm cutout, so the cup goes to the nearest solid spot, 41 mm away.
+A part held that far from its center of mass hangs on the cup and the wrist
+sensor reads several newtons during the return touchdown (about 4 N for a
+20 mm cup on the bracket, 39 mm off), so the EPick cell uses a 10 N return
+threshold.
 
-To run it, deploy with the suction gripper and use its cell config, which
+To run it, deploy with the EPick and use its cell config, which
 selects `suction_mesh` and acknowledges simulation:
 
 ```bash
 bazel run //:omts_solution -c opt \
-  --//:setup=lab_bb_01 --//:gripper=suction --//:workpiece="$WORKPIECE" -- \
+  --//:setup=lab_bb_01 --//:gripper=epick --//:workpiece="$WORKPIECE" -- \
   --address=localhost:17080 \
   --operation_mode=sim
 bazel run //src:omts_app -- \
   --address=localhost:17080 \
-  --config=configs/lab_bb_01/app_config_suction.yaml \
+  --config=configs/lab_bb_01/app_config_epick.yaml \
   --workpiece="$WORKPIECE"
 ```
 
@@ -212,7 +216,7 @@ Register the pose estimator after deploying, as in step 3 below.
 ## Demo workpieces (Lab BB-01)
 
 The lab cell runs `raw_stock_2x3x5` (the default), `banana`, `bracket` or,
-with the suction gripper, `cover_plate`. The
+with the EPick, `cover_plate`. The
 demo parts are placed by `configs/lab_bb_01_objects/`. Perception finds the
 part in the image from a text prompt, then fits its mesh, from the scene
 object `ai.intrinsic.$WORKPIECE`, to get the pose. Registering saves the

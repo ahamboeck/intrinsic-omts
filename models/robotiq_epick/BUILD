@@ -5,29 +5,29 @@ load("@intrinsic-core//intrinsic_sdk/intrinsic/assets/services/build_defs:servic
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["suction_gripper.sdf"])
+exports_files(["robotiq_epick.sdf"])
 
 sdf_scene_object(
-    name = "suction_gripper_sdf_scene_object",
-    src = "suction_gripper.sdf",
+    name = "robotiq_epick_sdf_scene_object",
+    src = "robotiq_epick.sdf",
 )
 
 intrinsic_scene_object(
-    name = "suction_gripper_scene_object",
-    manifest = "suction_gripper_scene_object_manifest.textproto",
-    scene_object = ":suction_gripper_sdf_scene_object",
+    name = "robotiq_epick_scene_object",
+    manifest = "robotiq_epick_scene_object_manifest.textproto",
+    scene_object = ":robotiq_epick_sdf_scene_object",
 )
 
 # Core's EOAT gripper service. In simulation it drives Gazebo's suction
 # plugin over the simulator's GPIO service; on hardware it would drive the
 # signals through the realtime control service named in the config.
 intrinsic_service(
-    name = "suction_gripper_service",
-    default_config = "suction_gripper_service_default_config.pbtxt",
+    name = "robotiq_epick_service",
+    default_config = "robotiq_epick_service_default_config.pbtxt",
     images = [
         "@intrinsic-core//intrinsic_hardware/intrinsic/hardware/gripper/service_asset:gripper-service-image.tar",
     ],
-    manifest = "suction_gripper_service_manifest.textproto",
+    manifest = "robotiq_epick_service_manifest.textproto",
     deps = [
         "@intrinsic-core//intrinsic_hardware/intrinsic/hardware/gripper/service_asset:suction_gripper_realtime_control_service_config_proto",
         "@intrinsic_apis//intrinsic/assets/services/proto/v1:service_state_proto",
@@ -37,10 +37,10 @@ intrinsic_service(
 )
 
 intrinsic_hardware_device(
-    name = "suction_gripper",
+    name = "robotiq_epick",
     assets = [
-        ":suction_gripper_scene_object",
-        ":suction_gripper_service",
+        ":robotiq_epick_scene_object",
+        ":robotiq_epick_service",
     ],
-    manifest = "suction_gripper_manifest.textproto",
+    manifest = "robotiq_epick_manifest.textproto",
 )

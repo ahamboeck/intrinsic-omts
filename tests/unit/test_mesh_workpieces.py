@@ -58,8 +58,9 @@ _WORKPIECES = (
   ),
 )
 
-# Parts the 20 mm cup can hold. The banana is too round for it.
-_SUCTION_WORKPIECES = ("raw_stock_2x3x5", "bracket", "cover_plate")
+# Parts the EPick's 40 mm cup can hold. The banana is too round for it, and
+# the bracket's flat faces are narrower than the cup.
+_SUCTION_WORKPIECES = ("raw_stock_2x3x5", "cover_plate")
 
 _INDEX_TYPES = {5121: "<u1", 5123: "<u2", 5125: "<u4"}
 
@@ -131,7 +132,7 @@ class MeshWorkpiecesTest(absltest.TestCase):
 
   def test_suction_candidates_match_the_parts_meant_for_suction(self):
     cup = load_app_config(
-      "configs/lab_bb_01/app_config_suction.yaml"
+      "configs/lab_bb_01/app_config_epick.yaml"
     ).gripper.model.suction
     for workpiece, scene_path, mesh_path in _WORKPIECES:
       with self.subTest(workpiece=workpiece):
@@ -145,16 +146,16 @@ class MeshWorkpiecesTest(absltest.TestCase):
 
   def test_cover_plate_cup_avoids_the_cutout_next_to_the_center(self):
     cup = load_app_config(
-      "configs/lab_bb_01/app_config_suction.yaml"
+      "configs/lab_bb_01/app_config_epick.yaml"
     ).gripper.model.suction
     (_, scene_path, mesh_path) = _WORKPIECES[-1]
     world_t_plate = _scene_pose(scene_path, "cover_plate")
     best = suction.top_down_grasps(*_read_glb(mesh_path), world_t_plate, cup)[0]
     # The 40 mm cutout is centered on the plate, so the nearest spot where the
-    # whole 20 mm cup is on metal is 30 mm from the center.
+    # whole 40 mm cup is on metal is 40 mm from the center.
     offset = np.abs(best.grasp[:2, 3] - world_t_plate[:2, 3])
     self.assertGreaterEqual(offset.max(), 0.02 + cup.cup_diameter_m / 2 - 1e-9)
-    self.assertLess(np.linalg.norm(offset), 0.034)
+    self.assertLess(np.linalg.norm(offset), 0.044)
 
 
 if __name__ == "__main__":

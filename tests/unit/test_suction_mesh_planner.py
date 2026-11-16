@@ -210,7 +210,7 @@ class SuctionMeshPlanGraspSkillTest(absltest.TestCase):
 class SuctionMeshGraspPlannerTest(absltest.TestCase):
   def setUp(self):
     super().setUp()
-    self.config = load_app_config("configs/lab_bb_01/app_config_suction.yaml")
+    self.config = load_app_config("configs/lab_bb_01/app_config_epick.yaml")
 
   def test_is_a_simulation_only_suction_planner_that_replans(self):
     planner = adapter.SuctionMeshGraspPlanner

@@ -1,15 +1,15 @@
 metadata {
   id {
     package: "ai.intrinsic"
-    name: "suction_gripper_service"
+    name: "robotiq_epick_service"
   }
   vendor {
-    display_name: "OMTS simulation"
+    display_name: "Robotiq"
   }
   documentation {
-    description: "EOAT suction gripper service for the single-cup vacuum gripper."
+    description: "EOAT suction gripper service for the Robotiq EPick in simulation."
   }
-  display_name: "Suction Gripper Service"
+  display_name: "EPick Suction Gripper Service"
   asset_tag: ASSET_TAG_GRIPPER
 }
 service_def {

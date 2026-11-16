@@ -30,7 +30,7 @@ from src.skills.control_suction_gripper import (
   control_suction_gripper_pb2,
 )
 
-_SUCTION_CONFIG = "configs/lab_bb_01/app_config_suction.yaml"
+_SUCTION_CONFIG = "configs/lab_bb_01/app_config_epick.yaml"
 
 
 class SuctionConfigTest(absltest.TestCase):
@@ -39,7 +39,7 @@ class SuctionConfigTest(absltest.TestCase):
     self.assertEqual(config.gripper.type, "suction")
     self.assertEqual(config.gripper.resource_name, "gripper")
     self.assertEqual(config.gripper.model.WhichOneof("kind"), "suction")
-    self.assertAlmostEqual(config.gripper.model.suction.cup_diameter_m, 0.02)
+    self.assertAlmostEqual(config.gripper.model.suction.cup_diameter_m, 0.04)
     self.assertEqual(config.grasp.planner, "suction_mesh")
     self.assertTrue(config.grasp.simulation_only)
 

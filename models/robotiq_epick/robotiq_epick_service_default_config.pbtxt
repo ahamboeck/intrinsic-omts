@@ -5,19 +5,19 @@
 [type.googleapis.com/intrinsic_proto.gripper_service.SuctionGripperRealtimeControlServiceConfig] {
   signals {
     grasp {
-      bool_values { key: "suction_gripper_vacuum" value: true }
+      bool_values { key: "epick_vacuum" value: true }
     }
     release {
-      bool_values { key: "suction_gripper_vacuum" value: false }
+      bool_values { key: "epick_vacuum" value: false }
     }
     blowoff_on {
-      bool_values { key: "suction_gripper_blowoff" value: true }
+      bool_values { key: "epick_blowoff" value: true }
     }
     blowoff_off {
-      bool_values { key: "suction_gripper_blowoff" value: false }
+      bool_values { key: "epick_blowoff" value: false }
     }
     gripping_indicated {
-      bool_values { key: "suction_gripper_part_present" value: true }
+      bool_values { key: "epick_part_present" value: true }
     }
   }
   service_instance_name: "icon"

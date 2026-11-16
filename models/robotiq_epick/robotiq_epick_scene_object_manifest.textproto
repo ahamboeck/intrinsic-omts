@@ -1,0 +1,14 @@
+metadata {
+  id {
+    package: "ai.intrinsic"
+    name: "robotiq_epick_scene_object"
+  }
+  vendor {
+    display_name: "Robotiq"
+  }
+  documentation {
+    description: "Robotiq EPick vacuum gripper with one 40 mm cup, as simple shapes for simulation."
+  }
+  display_name: "Robotiq EPick"
+  asset_tag: ASSET_TAG_GRIPPER
+}

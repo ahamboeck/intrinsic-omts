@@ -90,7 +90,7 @@ py_test(
     srcs = ["test_gripper_model.py"],
     data = [
         "//configs:all_configs",
-        "//models/suction_gripper:suction_gripper.sdf",
+        "//models/robotiq_epick:robotiq_epick.sdf",
         "@intrinsic-core//intrinsic_control/intrinsic/models/assets/standard_tooling/robotiq_hande",
     ],
     deps = [

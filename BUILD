@@ -40,14 +40,14 @@ string_flag(
     ],
 )
 
-# Flag to swap the Hand-E for the single-cup suction gripper. Only Lab BB-01
-# is wired for it.
+# Flag to swap the Hand-E for the Robotiq EPick vacuum gripper with one cup.
+# Only Lab BB-01 is wired for it.
 string_flag(
     name = "gripper",
     build_setting_default = "hande",
     values = [
+        "epick",
         "hande",
-        "suction",
     ],
 )
 
@@ -59,14 +59,14 @@ config_setting(
 )
 
 config_setting(
-    name = "is_lab_suction",
+    name = "is_lab_epick",
     flag_values = {
         ":setup": "lab_bb_01",
-        ":gripper": "suction",
+        ":gripper": "epick",
     },
 )
 
-_GRIPPER_FLAG_ERROR = "--//:gripper=suction is only wired for --//:setup=lab_bb_01."
+_GRIPPER_FLAG_ERROR = "--//:gripper=epick is only wired for --//:setup=lab_bb_01."
 
 config_setting(
     name = "is_lab_banana",
@@ -137,7 +137,7 @@ intrinsic_solution(
         "//models/raw_stock_2x3x5",
     ] + select(
         {
-            ":is_lab_suction": ["//models/suction_gripper"],
+            ":is_lab_epick": ["//models/robotiq_epick"],
             ":is_hande_gripper": [":hand_e_gripper_service_asset"],
         },
         no_match_error = _GRIPPER_FLAG_ERROR,
@@ -176,7 +176,7 @@ intrinsic_solution(
         ":flowstate_ros_bridge",
     ] + select(
         {
-            ":is_lab_suction": [":suction_gripper"],
+            ":is_lab_epick": [":robotiq_epick"],
             ":is_hande_gripper": [
                 ":robotiq_pinch_gripper",
                 ":hand_e_gripper_service",
@@ -200,7 +200,7 @@ intrinsic_solution(
     # The gripper's attachment to the arm comes first, as it did before the
     # gripper flag.
     object_world_updates = select({
-        ":is_lab_suction": ["//configs:lab_bb_01/suction_gripper.attachments.updates.pbtxt"],
+        ":is_lab_epick": ["//configs:lab_bb_01/robotiq_epick.attachments.updates.pbtxt"],
         ":is_lab_bb_01": ["//configs:lab_bb_01/ur_module.attachments.updates.pbtxt"],
         "//conditions:default": [],
     }) + select({
@@ -277,8 +277,8 @@ intrinsic_asset_instance(
 )
 
 intrinsic_asset_instance(
-    name = "suction_gripper",
-    asset = "ai.intrinsic.suction_gripper",
+    name = "robotiq_epick",
+    asset = "ai.intrinsic.robotiq_epick",
     instance_name = "gripper",
 )
 

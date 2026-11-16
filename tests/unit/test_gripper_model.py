@@ -89,20 +89,18 @@ def _hande_jaw_geometry() -> tuple[float, float, float]:
   return closed_gap, open_gap, tip_height - _pose(tool_frame)[2]
 
 
-_SUCTION_SDF = "models/suction_gripper/suction_gripper.sdf"
-_SUCTION_CELL = "configs/lab_bb_01/app_config_suction.yaml"
-_SUCTION_ATTACHMENTS = (
-  "configs/lab_bb_01/suction_gripper.attachments.updates.pbtxt"
-)
+_EPICK_SDF = "models/robotiq_epick/robotiq_epick.sdf"
+_EPICK_CELL = "configs/lab_bb_01/app_config_epick.yaml"
+_EPICK_ATTACHMENTS = "configs/lab_bb_01/robotiq_epick.attachments.updates.pbtxt"
 
 
 def _suction_cup_geometry() -> tuple[float, float]:
-  """Returns (cup diameter, tool frame to lip) from the suction gripper SDF.
+  """Returns (cup diameter, tool frame to lip) from the EPick SDF.
 
   The cup is the cylinder collider of the `gripper_collision` link, which
   Gazebo's suction plugin welds parts to; its lip is the cylinder's far end.
   """
-  model = ET.parse(_SUCTION_SDF).getroot().find("model")
+  model = ET.parse(_EPICK_SDF).getroot().find("model")
   link = model.find("link[@name='gripper_collision']")
   (cup,) = link.findall("collision")
   radius = float(cup.find("geometry/cylinder/radius").text)
@@ -113,17 +111,17 @@ def _suction_cup_geometry() -> tuple[float, float]:
 
 
 class GripperModelTest(absltest.TestCase):
-  def test_suction_cell_matches_the_suction_gripper_sdf(self):
+  def test_epick_cell_matches_the_epick_sdf(self):
     cup_diameter, contact_depth = _suction_cup_geometry()
-    cup = load_app_config(_SUCTION_CELL).gripper.model.suction
+    cup = load_app_config(_EPICK_CELL).gripper.model.suction
     self.assertAlmostEqual(cup.cup_diameter_m, cup_diameter, places=6)
     self.assertAlmostEqual(cup.contact_depth_m, contact_depth, places=6)
 
-  def test_suction_attachments_keep_the_sdf_tool_frame(self):
-    model = ET.parse(_SUCTION_SDF).getroot().find("model")
+  def test_epick_attachments_keep_the_sdf_tool_frame(self):
+    model = ET.parse(_EPICK_SDF).getroot().find("model")
     tool_z = _pose(model.find("frame[@name='tool_frame']"))[2]
-    text = open(_SUCTION_ATTACHMENTS, encoding="utf-8").read()
-    self.assertIn('entity_names: "suction_body"', text)
+    text = open(_EPICK_ATTACHMENTS, encoding="utf-8").read()
+    self.assertIn('entity_names: "epick_body"', text)
     self.assertIn(f"z: {tool_z:g}", text)
 
   def test_hande_cells_match_the_hande_sdf(self):

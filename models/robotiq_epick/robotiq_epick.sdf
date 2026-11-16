@@ -1,0 +1,146 @@
+<?xml version="1.0" ?>
+<!--
+Robotiq EPick vacuum gripper with one 40 mm, 1.5-bellows cup in the vacuum
+generator's port, as simple shapes for simulation. Dimensions and mass are from
+the EPick instruction manual (e-Series, 2021), sections 6.1.1 and 6.2.2,
+measured with the coupling: the cup's mounting face is 113 mm from the flange
+and its lip (the TCP) is 145 mm from it; the gripper weighs 741 g with its
+center of mass 55.2 mm from the flange.
+
+Gazebo's EOAT suction plugin welds a part that touches the `gripper_collision`
+link while the vacuum is on. The tool frame is at the cup's lip, so
+`gripper.model.suction.contact_depth_m` is 0.
+-->
+<sdf version="1.9" xmlns:intrinsic="https://intrinsic.ai/">
+  <model name="robotiq_epick">
+    <link name="epick_body">
+      <!-- Body and coupling: 720 g of the 741 g, as a 75 mm x 113 mm cylinder. -->
+      <inertial>
+        <pose>0 0 0.0552 0 0 0</pose>
+        <mass>0.72</mass>
+        <inertia>
+          <ixx>0.001019</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.001019</iyy>
+          <iyz>0</iyz>
+          <izz>0.000506</izz>
+        </inertia>
+      </inertial>
+      <visual name="coupling_visual">
+        <pose>0 0 0.006 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.0375</radius>
+            <length>0.012</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.15 0.15 0.15 1</ambient>
+          <diffuse>0.15 0.15 0.15 1</diffuse>
+        </material>
+      </visual>
+      <visual name="body_visual">
+        <pose>0 0 0.0625 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.0375</radius>
+            <length>0.101</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.82 1</ambient>
+          <diffuse>0.8 0.8 0.82 1</diffuse>
+        </material>
+      </visual>
+      <!-- The side tabs at the cup end, 83 mm across and 62 mm deep. -->
+      <visual name="tabs_visual">
+        <pose>0 0 0.1005 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.083 0.062 0.025</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.82 1</ambient>
+          <diffuse>0.8 0.8 0.82 1</diffuse>
+        </material>
+      </visual>
+      <collision name="body_collision">
+        <pose>0 0 0.0565 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.0375</radius>
+            <length>0.113</length>
+          </cylinder>
+        </geometry>
+      </collision>
+      <collision name="tabs_collision">
+        <pose>0 0 0.1005 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.083 0.062 0.025</size>
+          </box>
+        </geometry>
+      </collision>
+    </link>
+    <link name="gripper_collision">
+      <pose>0 0 0.113 0 0 0</pose>
+      <inertial>
+        <pose>0 0 0.016 0 0 0</pose>
+        <mass>0.021</mass>
+        <inertia>
+          <ixx>0.0000039</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.0000039</iyy>
+          <iyz>0</iyz>
+          <izz>0.0000042</izz>
+        </inertia>
+      </inertial>
+      <visual name="fitting_visual">
+        <pose>0 0 0.005 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.009</radius>
+            <length>0.01</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.6 0.6 0.6 1</ambient>
+          <diffuse>0.6 0.6 0.6 1</diffuse>
+        </material>
+      </visual>
+      <visual name="cup_visual">
+        <pose>0 0 0.021 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.02</radius>
+            <length>0.022</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.1 0.1 0.1 1</ambient>
+          <diffuse>0.1 0.1 0.1 1</diffuse>
+        </material>
+      </visual>
+      <!-- The cup, 40 mm wide, ends at the sealing lip 0.145 m from the flange. -->
+      <collision name="cup_collision">
+        <pose>0 0 0.016 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.02</radius>
+            <length>0.032</length>
+          </cylinder>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="cup_joint" type="fixed">
+      <parent>epick_body</parent>
+      <child>gripper_collision</child>
+    </joint>
+    <frame name="tool_frame" attached_to="epick_body" intrinsic:create_entity="true">
+      <pose>0 0 0.145 0 0 0</pose>
+    </frame>
+  </model>
+</sdf>

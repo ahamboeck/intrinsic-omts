@@ -1,8 +1,8 @@
 # proto-file: intrinsic/world/public/proto/object_world_updates.proto
 # proto-message: intrinsic_proto.world.ObjectWorldUpdates
-# Lab BB-01 with the single-cup suction gripper (--//:gripper=suction): as
+# Lab BB-01 with the Robotiq EPick (--//:gripper=epick): as
 # ur_module.attachments.updates.pbtxt, but the tool frame sits at the cup's
-# sealing lip, 0.13 m from the flange.
+# sealing lip, 0.145 m from the flange.
 
 updates {
   update_object_joints {
@@ -89,7 +89,7 @@ updates: {
       position {
         x: 0
         y: 0
-        z: 0.13
+        z: 0.145
       }
       orientation {
         x: 0
@@ -99,7 +99,7 @@ updates: {
       }
     }
     node_a_filter: {
-      entity_names: "suction_body"
+      entity_names: "epick_body"
     }
   }
 }
