@@ -24,6 +24,7 @@ from src.hardware.gripper import (
   GripperInterface,
   RobotiqGripper,
 )
+from tools.gripper import control_gripper
 from tools.gripper.control_gripper import (
   create_gripper,
   execute_action,
@@ -265,18 +266,18 @@ class ControlGripperTest(absltest.TestCase):
     self.assertEqual(cm.exception.code, 1)
 
   @mock.patch("tools.gripper.control_gripper.execute_action", return_value=True)
-  @mock.patch("tools.gripper.control_gripper.RobotiqGripper")
   @mock.patch("tools.gripper.control_gripper.deployments.connect")
-  def test_main_live_connection_and_action(
-    self, mock_connect, mock_robotiq_cls, mock_execute
-  ):
+  def test_main_live_connection_and_action(self, mock_connect, mock_execute):
     """Tests main connects to deployment and executes action on live gripper."""
     mock_solution = mock.MagicMock()
     mock_connect.return_value = mock_solution
     mock_gripper = mock.MagicMock()
-    mock_robotiq_cls.return_value = mock_gripper
+    mock_robotiq_cls = mock.MagicMock(return_value=mock_gripper)
 
-    main(["--address", "192.168.1.100:17080", "--action", "close"])
+    with mock.patch.dict(
+      control_gripper.gripper_lib.GRIPPERS, {"robotiq": mock_robotiq_cls}
+    ):
+      main(["--address", "192.168.1.100:17080", "--action", "close"])
 
     mock_connect.assert_called_once_with(address="192.168.1.100:17080")
     mock_robotiq_cls.assert_called_once()

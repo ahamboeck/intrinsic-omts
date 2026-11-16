@@ -379,6 +379,7 @@ py_test(
         "//src:omts_app",
         "//src/core:config",
         "//src/core:types",
+        "//src/grasping:gripper_model_py_pb2",
         "//src/grasping:interface",
         "//src/grasping:registry",
         "//src/grasping/planners/cuboid_center:adapter",

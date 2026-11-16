@@ -26,6 +26,13 @@ Grasp planners are not hardware adapters; they live in
 * **Scoped Configuration Dataclasses**: Every adapter constructor accepts the
   connected `solution` handle and its scoped configuration dataclass
   (`RobotConfig`, `GripperConfig`, `MachineConfig`, `VisionConfig`).
+* **Gripper Types**: `gripper.type` in the cell config selects the adapter.
+  `GRIPPER_TYPES` in [`src/core/config.py`](../core/config.py) lists each type's
+  `gripper.model` kind and required fields, which are checked when the config
+  loads, and `GRIPPERS` in [`gripper.py`](gripper.py) maps the same types to
+  their adapter classes; `create_gripper()` builds the cell's gripper. To add a
+  gripper type, add an adapter implementing `GripperInterface` and an entry to
+  both tables.
 * **Capability-Filtered ADIO Binding**: `DioGripper` and `DioCncMachine` resolve
   optional ADIO device handles via `resolve_adio_resource()` so skills only bind
   explicit resources advertising `Icon2AdioPart`.

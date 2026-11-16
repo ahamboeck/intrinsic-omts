@@ -15,6 +15,7 @@
 """Gripper hardware interfaces and implementations."""
 
 import abc
+from collections.abc import Mapping
 from typing import Any
 
 from intrinsic.solutions import behavior_tree as bt
@@ -181,3 +182,25 @@ class RobotiqGripper(GripperInterface):
       kwargs["action_name"] = self._action_name
     action = self._gripper_cmd_skill(**kwargs)
     return bt.Task(action=action, name=task_name)
+
+
+# The adapter of each `gripper.type`. The cell config lists the same types,
+# with their model kind and required fields, in `src.core.config.GRIPPER_TYPES`.
+GRIPPERS: Mapping[str, type[GripperInterface]] = {
+  "dio": DioGripper,
+  "robotiq": RobotiqGripper,
+}
+
+
+def create_gripper(solution: Any, config: GripperConfig) -> GripperInterface:
+  """Builds the adapter for the cell's gripper.
+
+  Args:
+      solution: Connected solution deployment.
+      config: Gripper section of the cell config. `GripperConfig` already
+        checked its type and required fields.
+
+  Returns:
+      The gripper adapter for `config.type`.
+  """
+  return GRIPPERS[config.type](solution=solution, config=config)

@@ -25,15 +25,17 @@ from absl.testing import absltest
 from intrinsic.solutions import execution
 
 from src import main as omts_main
+from src.core import config as config_lib
 from src.core.config import (
   AppConfig,
   GraspConfig,
   GripperConfig,
+  GripperType,
   load_app_config,
   with_workpiece,
 )
 from src.core.types import SimulationMode
-from src.grasping import registry
+from src.grasping import gripper_model_pb2, registry
 from src.grasping.interface import GraspPlannerInterface
 from src.grasping.planners.cuboid_center.adapter import (
   CuboidCenterGraspPlanner,
@@ -200,6 +202,27 @@ gripper:
       KeyError, "Missing required configuration field.*close_position"
     ):
       load_app_config(tmp_path)
+
+  def test_unknown_gripper_type_is_rejected(self):
+    with self.assertRaisesRegex(
+      ValueError, r"Unsupported gripper type 'gecko'.*\['dio', 'robotiq'\]"
+    ):
+      GripperConfig(type="gecko")
+
+  def test_gripper_model_must_be_the_kind_of_the_gripper_type(self):
+    jaws = gripper_model_pb2.GripperModel(
+      parallel_jaw=gripper_model_pb2.ParallelJawGripper(
+        min_width_m=0.01, max_width_m=0.06
+      )
+    )
+    vacuum = GripperType(kind="suction", required_fields=())
+    with mock.patch.dict(config_lib.GRIPPER_TYPES, {"vacuum": vacuum}):
+      with self.assertRaisesRegex(
+        ValueError,
+        "'vacuum' is described by a 'suction' model, but 'gripper.model' is "
+        "'parallel_jaw'",
+      ):
+        GripperConfig(type="vacuum", model=jaws)
 
   def test_missing_dio_gripper_fields_and_invalid_yaml_root(self):
     with self.assertRaisesRegex(

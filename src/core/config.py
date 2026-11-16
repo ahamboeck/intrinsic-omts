@@ -46,11 +46,40 @@ class RobotConfig:
 
 
 @dataclasses.dataclass(frozen=True)
+class GripperType:
+  """What the cell config needs to know about one `gripper.type`.
+
+  Attributes:
+      kind: The `gripper.model` kind, a field of `GripperModel`, that grippers
+        of this type are described by.
+      required_fields: `GripperConfig` fields this type's adapter needs.
+  """
+
+  kind: str
+  required_fields: tuple[str, ...]
+
+
+# The gripper types a cell config may use. Each has an adapter of the same name
+# in `src.hardware.gripper.GRIPPERS`. To add a gripper type, add it here and
+# there.
+GRIPPER_TYPES: Mapping[str, GripperType] = {
+  "dio": GripperType(
+    kind="parallel_jaw",
+    required_fields=("dio_open_pin", "dio_close_pin", "dio_output_block_name"),
+  ),
+  "robotiq": GripperType(
+    kind="parallel_jaw",
+    required_fields=("joint_name", "open_position", "close_position"),
+  ),
+}
+
+
+@dataclasses.dataclass(frozen=True)
 class GripperConfig:
   """Configuration for the end-effector gripper adapter.
 
   Attributes:
-      type: Gripper adapter type (`'robotiq'` or `'dio'`).
+      type: Gripper adapter type, a key of `GRIPPER_TYPES`.
       joint_name: Finger joint name for `RobotiqGripper`.
       open_position: Open stroke position in meters for `RobotiqGripper`.
       close_position: Closed stroke position in meters for `RobotiqGripper`.
@@ -76,17 +105,27 @@ class GripperConfig:
   model: gripper_model_pb2.GripperModel | None = None
 
   def __post_init__(self) -> None:
-    if self.type == "robotiq":
-      required = ("joint_name", "open_position", "close_position")
-    elif self.type == "dio":
-      required = ("dio_open_pin", "dio_close_pin", "dio_output_block_name")
-    else:
-      return
-    missing = [name for name in required if getattr(self, name) is None]
+    gripper_type = GRIPPER_TYPES.get(self.type)
+    if gripper_type is None:
+      raise ValueError(
+        f"Unsupported gripper type '{self.type}'. Supported: "
+        f"{sorted(GRIPPER_TYPES)}."
+      )
+    missing = [
+      name
+      for name in gripper_type.required_fields
+      if getattr(self, name) is None
+    ]
     if missing:
       raise KeyError(
         f"Missing required configuration field(s) {sorted(missing)} for "
         f"gripper type '{self.type}'"
+      )
+    kind = self.model.WhichOneof("kind") if self.model is not None else None
+    if kind is not None and kind != gripper_type.kind:
+      raise ValueError(
+        f"Gripper type '{self.type}' is described by a '{gripper_type.kind}' "
+        f"model, but 'gripper.model' is '{kind}'."
       )
 
 
@@ -335,31 +374,13 @@ def _construct_section(
     )
 
   section_dict = dict(raw_data[section_name])
-  if section_name == "gripper":
-    gripper_type = section_dict.get("type")
-    if gripper_type == "robotiq":
-      required_fields = {
-        "type",
-        "joint_name",
-        "open_position",
-        "close_position",
-      }
-    elif gripper_type == "dio":
-      required_fields = {
-        "type",
-        "dio_open_pin",
-        "dio_close_pin",
-        "dio_output_block_name",
-      }
-    else:
-      required_fields = {"type"}
-  else:
-    required_fields = {
-      f.name
-      for f in dataclasses.fields(cls)  # type: ignore[arg-type]
-      if f.default is dataclasses.MISSING
-      and f.default_factory is dataclasses.MISSING
-    }
+  # The gripper type's own required fields are checked by `GripperConfig`.
+  required_fields = {
+    f.name
+    for f in dataclasses.fields(cls)  # type: ignore[arg-type]
+    if f.default is dataclasses.MISSING
+    and f.default_factory is dataclasses.MISSING
+  }
   missing_fields = required_fields - set(section_dict.keys())
   if missing_fields:
     sorted_missing = sorted(missing_fields)

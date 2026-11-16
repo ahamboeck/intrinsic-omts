@@ -22,11 +22,8 @@ from typing import Any
 from intrinsic.solutions import deployments, execution
 
 from src.core.config import GripperConfig
-from src.hardware.gripper import (
-  DioGripper,
-  GripperInterface,
-  RobotiqGripper,
-)
+from src.hardware import gripper as gripper_lib
+from src.hardware.gripper import GripperInterface
 
 VALID_ACTIONS: tuple[str, ...] = ("open", "close")
 
@@ -60,10 +57,7 @@ def create_gripper(
       dio_device_name=getattr(args, "device_name", "ur_module"),
       dio_output_block_name=getattr(args, "output_block_name", "standard_out"),
     )
-    return DioGripper(
-      solution=solution,
-      config=config,
-    )
+    return gripper_lib.create_gripper(solution, config)
   if gripper_type in ("robotiq", "sideloaded"):
     config = GripperConfig(
       type="robotiq",
@@ -72,7 +66,7 @@ def create_gripper(
       close_position=getattr(args, "close_position", 0.0),
       action_name=getattr(args, "action_name", None),
     )
-    return RobotiqGripper(solution=solution, config=config)
+    return gripper_lib.create_gripper(solution, config)
   raise ValueError(f"Unsupported gripper type: {gripper_type}")
 
 

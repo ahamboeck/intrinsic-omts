@@ -55,6 +55,11 @@ grasp frame names and are owned by
 
 ## Configuration
 
+`gripper.type` names the adapter that drives the gripper; `gripper.model`
+describes its geometry for the planners. Several types can share a model kind,
+like `robotiq` and `dio` for `parallel_jaw`, and loading the config checks that
+the model's kind matches the type.
+
 ```yaml
 gripper:
   type: "robotiq"

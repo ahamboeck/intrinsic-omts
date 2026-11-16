@@ -21,13 +21,19 @@ from absl.testing import absltest
 from intrinsic.solutions import behavior_tree as bt
 
 from src.core.config import (
+  GRIPPER_TYPES,
   GripperConfig,
   MachineConfig,
   RobotConfig,
   VisionConfig,
 )
 from src.core.types import JointPosition
-from src.hardware.gripper import DioGripper, RobotiqGripper
+from src.hardware.gripper import (
+  GRIPPERS,
+  DioGripper,
+  RobotiqGripper,
+  create_gripper,
+)
 from src.hardware.machine import DioCncMachine
 from src.hardware.robot import Robot
 from src.hardware.vision import OrbbecVision
@@ -201,6 +207,28 @@ class HardwareAdaptersTest(absltest.TestCase):
     self.assertEqual(
       detach_kwargs["object_entity"].by_name.object_name, "raw_stock_2x3x5"
     )
+
+  def test_every_gripper_type_has_an_adapter(self):
+    self.assertCountEqual(GRIPPERS, GRIPPER_TYPES)
+
+  def test_create_gripper_builds_the_adapter_of_the_type(self):
+    configs = {
+      DioGripper: GripperConfig(
+        type="dio",
+        dio_open_pin=0,
+        dio_close_pin=1,
+        dio_output_block_name="standard_out",
+      ),
+      RobotiqGripper: GripperConfig(
+        type="robotiq",
+        joint_name="robotiq_hande_left_finger_joint",
+        open_position=0.025,
+        close_position=0.0,
+      ),
+    }
+    for adapter, config in configs.items():
+      with self.subTest(type=config.type):
+        self.assertIsInstance(create_gripper(mock.MagicMock(), config), adapter)
 
   def test_dio_gripper(self):
     mock_solution = mock.MagicMock()

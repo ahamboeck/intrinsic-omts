@@ -28,7 +28,7 @@ from src.core.infeed import (
 )
 from src.core.types import SimulationMode
 from src.grasping import registry
-from src.hardware.gripper import DioGripper, GripperInterface, RobotiqGripper
+from src.hardware.gripper import create_gripper
 from src.hardware.machine import DioCncMachine
 from src.hardware.robot import Robot
 from src.hardware.vision import OrbbecVision
@@ -107,17 +107,7 @@ def run_machine_tending_pipeline(
   )
   solution = deployments.connect(address=solution_address)
 
-  gripper: GripperInterface
-  if config.gripper.type == "dio":
-    gripper = DioGripper(
-      solution=solution,
-      config=config.gripper,
-    )
-  else:
-    gripper = RobotiqGripper(
-      solution=solution,
-      config=config.gripper,
-    )
+  gripper = create_gripper(solution, config.gripper)
 
   robot = Robot(
     solution=solution,
